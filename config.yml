@@ -1,7 +1,7 @@
 # Paths
 inbox_dir: inbox                         # Drop scanned TIFFs here
 done_jp2_dir: done/jp2                   # Lossy view JP2s (sheets + Folder-ID labels) — the IIIF-served copy
-done_jp2_lossless_dir: done/jp2_lossless # Lossless archival JP2s — same images, reversible encode, kept separately
+done_jp2_lossless_dir: done/jp2_lossless # Lossless archival JP2s — sheets only, reversible encode, kept separately
 done_tif_dir: done/tif                   # Successfully processed TIFF files (sheets + Folder-ID labels, renamed;
                                           # sheets keep .tiff, Folder-ID labels keep .tif — see steps/qr_read.py)
 error_dir: error                         # Files that failed processing end up here

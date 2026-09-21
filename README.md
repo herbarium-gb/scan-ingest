@@ -52,11 +52,11 @@ days' scans.
 | Step | Module | What it does |
 |------|--------|---------------|
 | Read QR | `steps/qr_read.py` | Decodes the QR code (and any barcodes) via pyzbar; classifies the QR as a Folder-ID label or a specimen accession. |
-| Convert | `steps/convert.py` | TIFF → JP2 via `opj_compress`, twice: a lossy view (`rate`-targeted, irreversible 9/7 wavelet) and a lossless archival copy (`lossless=True` — no `-r`/`-I`, reversible 5/3 wavelet, pixel-identical to the source). Both sheets and Folder-ID labels go through this — Folder rows are real scanned images too, matching how Picturae's own delivery data treats them. |
+| Convert | `steps/convert.py` | TIFF → JP2 via `opj_compress`. Sheets get two encodes: a lossy view (`rate`-targeted, irreversible 9/7 wavelet) and a lossless archival copy (`lossless=True` — no `-r`/`-I`, reversible 5/3 wavelet, pixel-identical to the source). Folder-ID labels get the lossy view only — a folder cover is an administrative label, not the specimen being preserved, and its kraft-paper grain compresses disproportionately poorly (larger files for less archival value than a sheet's lossless copy). |
 | Validate | `steps/validate.py` | Rejects a JP2 below the configured minimum resolution/file size, or above the maximum — separate thresholds for the lossy view (`validation`) and the much larger lossless copy (`validation_lossless`). |
 | Register | `steps/register.py` | Appends a row to the daily TSV batch log and to a FileMaker-import CSV (Picturae's own column header, most taxonomy columns left blank). Only the lossy view's path is recorded — the lossless copy isn't part of that schema. |
 | Track folder | `steps/state.py` | Persists the "current folder" ID across runs (`logs/current_folder_state.txt`), since a folder's label and its last sheets can land in different nightly runs. |
-| File away | `ingest.py` | Moves the lossy JP2 to `done/jp2/`, the lossless JP2 to `done/jp2_lossless/`, and the TIFF to `done/tif/` (sheets and Folder-ID labels together in each, matching Picturae's own flat delivery layout — kept apart only by extension, `.tiff` vs `.tif`). Anything that raises along the way goes to `error/` instead. |
+| File away | `ingest.py` | Moves the lossy JP2 to `done/jp2/` and the TIFF to `done/tif/` (sheets and Folder-ID labels together in each, matching Picturae's own flat delivery layout — kept apart only by extension, `.tiff` vs `.tif`); a sheet's lossless JP2 also goes to `done/jp2_lossless/`. Anything that raises along the way goes to `error/` instead. |
 
 A sheet's QR always identifies the sheet/image; a barcode (0 or more per
 sheet) identifies one "kollekt" (field-collection event) mounted on it — see
@@ -108,7 +108,7 @@ Standalone dev/test tools, separate from the `ingest.py` entrypoint:
 ```
 done/
   jp2/           lossy view JP2s (sheets + Folder-ID labels), renamed to accession/folder ID
-  jp2_lossless/  lossless archival JP2s, same names as jp2/ — pixel-identical to the source TIFF
+  jp2_lossless/  lossless archival JP2s, sheets only — pixel-identical to the source TIFF
   tif/           TIFFs (sheets + Folder-ID labels), renamed to accession ID (.tiff)
                  or folder ID (.tif) — the extension is the only thing telling them apart
 error/  anything that failed a step, left under its original/partial name

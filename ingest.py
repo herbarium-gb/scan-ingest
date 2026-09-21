@@ -100,36 +100,28 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
     Folder markers go through the same convert+validate steps as sheets —
     they're real scanned images too, matching how Picturae's own delivery
     data for this collection treats Folder rows (see
-    notes/species-tagging-options.txt). That includes both JP2 outputs: a
-    lossy view (done_jp2_dir) and a lossless archival copy
-    (done_jp2_lossless_dir) — see steps/convert.py.
+    notes/species-tagging-options.txt). Lossy view only, no lossless
+    archival copy: a folder cover is an administrative label, not the
+    specimen being preserved, and it compresses disproportionately poorly
+    (kraft paper's grain carries more pixel-level noise than a sheet's
+    background) — see steps/convert.py for the lossless path sheets use.
     """
     named_tiff = tiff_path.with_name(f"{folder_id}.tif")
     jp2_path = tiff_path.with_suffix(".jp2")
-    lossless_path = tiff_path.with_name(f"{tiff_path.stem}_lossless.jp2")
     try:
         tiff_path.rename(named_tiff)
 
-        print("  Converting to JP2 (lossy)...")
+        print("  Converting to JP2...")
         tiff_to_jp2(named_tiff, jp2_path, config)
         named_jp2 = jp2_path.with_name(f"{folder_id}.jp2")
         jp2_path.rename(named_jp2)
         jp2_path = named_jp2
 
-        print("  Converting to JP2 (lossless)...")
-        tiff_to_jp2(named_tiff, lossless_path, config, lossless=True)
-        named_lossless = lossless_path.with_name(f"{folder_id}_lossless.jp2")
-        lossless_path.rename(named_lossless)
-        lossless_path = named_lossless
-
         print("  Validating...")
         validate_jp2(jp2_path, config)
-        lossless_cfg = {**config, "validation": config.get("validation_lossless", config["validation"])}
-        validate_jp2(lossless_path, lossless_cfg)
 
         final_tiff_path = dirs["done_tif"] / named_tiff.name
         final_jp2_path = dirs["done_jp2"] / jp2_path.name
-        final_lossless_path = dirs["done_jp2_lossless"] / f"{folder_id}.jp2"
 
         register_folder_marker(
             folder_id, jp2_path, log_path, csv_path,
@@ -137,7 +129,6 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
         )
         shutil.move(str(named_tiff), final_tiff_path)
         shutil.move(str(jp2_path), final_jp2_path)
-        shutil.move(str(lossless_path), final_lossless_path)
 
         state.set_current_folder(folder_id)
         print(f"  Folder marker: {folder_id} "
@@ -145,7 +136,7 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
         return True
     except Exception as e:
         print(f"  ERROR: {e}", file=sys.stderr)
-        for leftover in (tiff_path, named_tiff, jp2_path, lossless_path):
+        for leftover in (tiff_path, named_tiff, jp2_path):
             if leftover.exists():
                 shutil.move(str(leftover), dirs["error"] / leftover.name)
         return False
