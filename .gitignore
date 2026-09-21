@@ -6,5 +6,5 @@ inbox/
 done/
 error/
 logs/
-psnr_out/
+compression_quality_out/
 previous/

@@ -91,7 +91,7 @@ git-ignored secrets/paths:
 
 Standalone dev/test tools, separate from the `ingest.py` entrypoint:
 
-- `scripts/psnr_test.py` — encodes a TIFF at several JP2 compression rates
+- `scripts/compression_quality_test.py` — encodes a TIFF at several JP2 compression rates
   and reports size/PSNR against the source, to help pick an encoding rate
   matching Picturae's quality/size. Defaults to `previous/*.tif` if no file
   is given (not present in a fresh checkout — see the script's docstring).

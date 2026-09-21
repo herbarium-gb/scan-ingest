@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Jämför JP2-kompression av BookEye-TIFF vid olika nivåer.
 
-Kör:  python scripts/psnr_test.py <bild1.tif> <bild2.tif> ...
+Kör:  python scripts/compression_quality_test.py <bild1.tif> <bild2.tif> ...
 Utan argument används previous/*.tif som fallback (går att köra från valfri
 katalog, sökvägar är relativa till repo-roten).
 
-För varje TIFF och varje kompressionsnivå skrivs en JP2 till psnr_out/, och
-storlek + PSNR mot käll-TIFF:en rapporteras. Syftet är att hitta en nivå som
-ger Picturae-liknande kvalitet/storlek för BookEye-materialet.
+För varje TIFF och varje kompressionsnivå skrivs en JP2 till
+compression_quality_out/, och storlek + PSNR (kvalitetsmått, se
+funktionen psnr() nedan) mot käll-TIFF:en rapporteras. Syftet är att
+hitta en nivå som ger Picturae-liknande kvalitet/storlek för
+BookEye-materialet.
 
 Picturae-referens (GB-0500017): ~12:1, ~17 MB, och vår omkodning låg på ~49 dB
 mot deras data. 40+ dB = visuellt omärkbar skillnad.
@@ -36,7 +38,7 @@ from steps.convert import tiff_to_jp2
 RATES_BPP = [3.0, 2.4, 2.0, 1.7, 1.5, 1.2, 1.0]
 
 config = yaml.safe_load(open(REPO_ROOT / "config.yml"))
-out_dir = REPO_ROOT / "psnr_out"
+out_dir = REPO_ROOT / "compression_quality_out"
 out_dir.mkdir(exist_ok=True)
 
 
