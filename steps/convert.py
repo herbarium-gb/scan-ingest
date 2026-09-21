@@ -15,9 +15,15 @@ def _bpp_to_ratio(tiff_path: Path, rate_bpp: float) -> int:
     return max(1, round(bit_depth / rate_bpp))
 
 
-def tiff_to_jp2(tiff_path: Path, jp2_path: Path, config: dict) -> None:
+def tiff_to_jp2(tiff_path: Path, jp2_path: Path, config: dict, lossless: bool = False) -> None:
+    """Encode tiff_path to jp2_path using the [jp2] settings in config.
+
+    lossless=True drops the -r (target ratio) and -I (irreversible 9/7
+    wavelet) flags, giving a reversible archival encode — same resolutions/
+    progression/block/precinct/tile settings otherwise, per the lossless
+    recipe in notes/scan-ingest-pipeline.txt (260601-Resumed-scanning).
+    """
     jp2_cfg = config.get("jp2", {})
-    rate_bpp = jp2_cfg.get("rate", 2.0)
     resolutions = jp2_cfg.get("resolutions", 8)
     progression = jp2_cfg.get("progression", "RPCL")
     block_size = jp2_cfg.get("block_size", [64, 64])
@@ -26,21 +32,23 @@ def tiff_to_jp2(tiff_path: Path, jp2_path: Path, config: dict) -> None:
     precinct_sizes = jp2_cfg.get("precinct_sizes", [])
     precinct_str = ",".join(f"[{w},{h}]" for w, h in precinct_sizes)
 
-    ratio = _bpp_to_ratio(tiff_path, rate_bpp)
-
     cmd = [
         "opj_compress",
         "-i", str(tiff_path),
         "-o", str(jp2_path),
         "-p", progression,
         "-n", str(resolutions),
-        "-r", str(ratio),
-        "-I",
         "-SOP",
         "-PLT",
         "-b", f"{block_size[0]},{block_size[1]}",
         "-TP", "R",
     ]
+    if lossless:
+        pass  # no -r / -I: opj_compress defaults to a reversible 5/3 encode
+    else:
+        rate_bpp = jp2_cfg.get("rate", 2.0)
+        ratio = _bpp_to_ratio(tiff_path, rate_bpp)
+        cmd += ["-r", str(ratio), "-I"]
     if precinct_str:
         cmd += ["-c", precinct_str]
     if tile_size:

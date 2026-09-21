@@ -2,12 +2,13 @@
 
 Ingest pipeline for herbarium sheets scanned in-house on a BookEye 4 at the
 Gothenburg herbarium (GB). Each scanned TIFF is classified by its QR code,
-converted to JP2, and registered for FileMaker import.
+converted to two JP2s (a lossy view + a lossless archival copy), and
+registered for FileMaker import.
 
 ```
-BookEye TIFF ──► classify QR ──► convert to JP2 ──► validate ──► register ──► file away
- (upload/)        (Folder or        (opj_compress)    (size/res)   (TSV log +   (done/)
-                    Sheet)                                          FileMaker CSV)
+BookEye TIFF ──► classify QR ──► convert to JP2 x2 ──► validate ──► register ──► file away
+ (upload/)        (Folder or        (lossy view +         (size/res)   (TSV log +   (done/)
+                    Sheet)          lossless archive)                  FileMaker CSV)
 ```
 
 A **Folder-ID label** (`GB-Folder_<digits>`) is the first image scanned in a
@@ -51,11 +52,11 @@ days' scans.
 | Step | Module | What it does |
 |------|--------|---------------|
 | Read QR | `steps/qr_read.py` | Decodes the QR code (and any barcodes) via pyzbar; classifies the QR as a Folder-ID label or a specimen accession. |
-| Convert | `steps/convert.py` | TIFF → JP2 via `opj_compress`, encoding settings from `config.yml`. Both sheets and Folder-ID labels go through this — Folder rows are real scanned images too, matching how Picturae's own delivery data treats them. |
-| Validate | `steps/validate.py` | Rejects JP2s below the configured minimum resolution/file size, or above the maximum. |
-| Register | `steps/register.py` | Appends a row to the daily TSV batch log and to a FileMaker-import CSV (Picturae's own column header, most taxonomy columns left blank). |
+| Convert | `steps/convert.py` | TIFF → JP2 via `opj_compress`, twice: a lossy view (`rate`-targeted, irreversible 9/7 wavelet) and a lossless archival copy (`lossless=True` — no `-r`/`-I`, reversible 5/3 wavelet, pixel-identical to the source). Both sheets and Folder-ID labels go through this — Folder rows are real scanned images too, matching how Picturae's own delivery data treats them. |
+| Validate | `steps/validate.py` | Rejects a JP2 below the configured minimum resolution/file size, or above the maximum — separate thresholds for the lossy view (`validation`) and the much larger lossless copy (`validation_lossless`). |
+| Register | `steps/register.py` | Appends a row to the daily TSV batch log and to a FileMaker-import CSV (Picturae's own column header, most taxonomy columns left blank). Only the lossy view's path is recorded — the lossless copy isn't part of that schema. |
 | Track folder | `steps/state.py` | Persists the "current folder" ID across runs (`logs/current_folder_state.txt`), since a folder's label and its last sheets can land in different nightly runs. |
-| File away | `ingest.py` | Moves each image's JP2 to `done/jp2/` and TIFF to `done/tif/` (sheets and Folder-ID labels together, matching Picturae's own flat delivery layout — kept apart only by extension, `.tiff` vs `.tif`). Anything that raises along the way goes to `error/` instead. |
+| File away | `ingest.py` | Moves the lossy JP2 to `done/jp2/`, the lossless JP2 to `done/jp2_lossless/`, and the TIFF to `done/tif/` (sheets and Folder-ID labels together in each, matching Picturae's own flat delivery layout — kept apart only by extension, `.tiff` vs `.tif`). Anything that raises along the way goes to `error/` instead. |
 
 A sheet's QR always identifies the sheet/image; a barcode (0 or more per
 sheet) identifies one "kollekt" (field-collection event) mounted on it — see
@@ -80,10 +81,11 @@ git-ignored secrets/paths:
 - **`.env`** (git-ignored — copy from `.env.template`) — server-specific
   paths that override `config.yml`'s relative defaults, plus FileMaker Data
   API credentials (`FM_BASE_URL`/`FM_DATABASE`/`FM_LAYOUT`/`FM_USER`/
-  `FM_PASSWORD`). `DATA_DIR` points all five directories (`upload`,
-  `done/jp2`, `done/tif`, `error`, `logs`) at once; set
-  `INBOX_DIR`/`DONE_JP2_DIR`/`DONE_TIF_DIR`/`ERROR_DIR`/`LOG_DIR` instead (or
-  in addition) to redirect a single one of those paths.
+  `FM_PASSWORD`). `DATA_DIR` points all six directories (`upload`,
+  `done/jp2`, `done/jp2_lossless`, `done/tif`, `error`, `logs`) at once; set
+  `INBOX_DIR`/`DONE_JP2_DIR`/`DONE_JP2_LOSSLESS_DIR`/`DONE_TIF_DIR`/
+  `ERROR_DIR`/`LOG_DIR` instead (or in addition) to redirect a single one of
+  those paths.
 
 ## Scripts
 
@@ -105,9 +107,10 @@ Standalone dev/test tools, separate from the `ingest.py` entrypoint:
 
 ```
 done/
-  jp2/  lossy JP2s (sheets + Folder-ID labels), renamed to accession/folder ID
-  tif/  TIFFs (sheets + Folder-ID labels), renamed to accession ID (.tiff)
-        or folder ID (.tif) — the extension is the only thing telling them apart
+  jp2/           lossy view JP2s (sheets + Folder-ID labels), renamed to accession/folder ID
+  jp2_lossless/  lossless archival JP2s, same names as jp2/ — pixel-identical to the source TIFF
+  tif/           TIFFs (sheets + Folder-ID labels), renamed to accession ID (.tiff)
+                 or folder ID (.tif) — the extension is the only thing telling them apart
 error/  anything that failed a step, left under its original/partial name
 logs/
   ingest_<date>.tsv              per-run batch log

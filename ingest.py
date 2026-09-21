@@ -59,16 +59,18 @@ def load_config(config_path: Path = Path("config.yml")) -> dict:
         base = Path(data_dir)
         config["inbox_dir"] = str(base / "upload")
         config["done_jp2_dir"] = str(base / "done" / "jp2")
+        config["done_jp2_lossless_dir"] = str(base / "done" / "jp2_lossless")
         config["done_tif_dir"] = str(base / "done" / "tif")
         config["error_dir"] = str(base / "error")
         config["log_dir"] = str(base / "logs")
 
     env_overrides = {
-        "inbox_dir":     "INBOX_DIR",
-        "done_jp2_dir":  "DONE_JP2_DIR",
-        "done_tif_dir":  "DONE_TIF_DIR",
-        "error_dir":     "ERROR_DIR",
-        "log_dir":       "LOG_DIR",
+        "inbox_dir":              "INBOX_DIR",
+        "done_jp2_dir":           "DONE_JP2_DIR",
+        "done_jp2_lossless_dir":  "DONE_JP2_LOSSLESS_DIR",
+        "done_tif_dir":           "DONE_TIF_DIR",
+        "error_dir":              "ERROR_DIR",
+        "log_dir":                "LOG_DIR",
     }
     for key, env_var in env_overrides.items():
         if os.getenv(env_var):
@@ -78,11 +80,12 @@ def load_config(config_path: Path = Path("config.yml")) -> dict:
 
 def setup_dirs(config: dict) -> dict[str, Path]:
     dirs = {
-        "inbox":    Path(config["inbox_dir"]),
-        "done_jp2": Path(config["done_jp2_dir"]),
-        "done_tif": Path(config["done_tif_dir"]),
-        "error":    Path(config["error_dir"]),
-        "logs":     Path(config["log_dir"]),
+        "inbox":             Path(config["inbox_dir"]),
+        "done_jp2":          Path(config["done_jp2_dir"]),
+        "done_jp2_lossless": Path(config["done_jp2_lossless_dir"]),
+        "done_tif":          Path(config["done_tif_dir"]),
+        "error":             Path(config["error_dir"]),
+        "logs":              Path(config["log_dir"]),
     }
     for d in dirs.values():
         d.mkdir(parents=True, exist_ok=True)
@@ -97,24 +100,36 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
     Folder markers go through the same convert+validate steps as sheets —
     they're real scanned images too, matching how Picturae's own delivery
     data for this collection treats Folder rows (see
-    notes/species-tagging-options.txt).
+    notes/species-tagging-options.txt). That includes both JP2 outputs: a
+    lossy view (done_jp2_dir) and a lossless archival copy
+    (done_jp2_lossless_dir) — see steps/convert.py.
     """
     named_tiff = tiff_path.with_name(f"{folder_id}.tif")
     jp2_path = tiff_path.with_suffix(".jp2")
+    lossless_path = tiff_path.with_name(f"{tiff_path.stem}_lossless.jp2")
     try:
         tiff_path.rename(named_tiff)
 
-        print("  Converting to JP2...")
+        print("  Converting to JP2 (lossy)...")
         tiff_to_jp2(named_tiff, jp2_path, config)
         named_jp2 = jp2_path.with_name(f"{folder_id}.jp2")
         jp2_path.rename(named_jp2)
         jp2_path = named_jp2
 
+        print("  Converting to JP2 (lossless)...")
+        tiff_to_jp2(named_tiff, lossless_path, config, lossless=True)
+        named_lossless = lossless_path.with_name(f"{folder_id}_lossless.jp2")
+        lossless_path.rename(named_lossless)
+        lossless_path = named_lossless
+
         print("  Validating...")
         validate_jp2(jp2_path, config)
+        lossless_cfg = {**config, "validation": config.get("validation_lossless", config["validation"])}
+        validate_jp2(lossless_path, lossless_cfg)
 
         final_tiff_path = dirs["done_tif"] / named_tiff.name
         final_jp2_path = dirs["done_jp2"] / jp2_path.name
+        final_lossless_path = dirs["done_jp2_lossless"] / f"{folder_id}.jp2"
 
         register_folder_marker(
             folder_id, jp2_path, log_path, csv_path,
@@ -122,6 +137,7 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
         )
         shutil.move(str(named_tiff), final_tiff_path)
         shutil.move(str(jp2_path), final_jp2_path)
+        shutil.move(str(lossless_path), final_lossless_path)
 
         state.set_current_folder(folder_id)
         print(f"  Folder marker: {folder_id} "
@@ -129,7 +145,7 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
         return True
     except Exception as e:
         print(f"  ERROR: {e}", file=sys.stderr)
-        for leftover in (tiff_path, named_tiff, jp2_path):
+        for leftover in (tiff_path, named_tiff, jp2_path, lossless_path):
             if leftover.exists():
                 shutil.move(str(leftover), dirs["error"] / leftover.name)
         return False
@@ -138,22 +154,35 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
 def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
                   state: FolderState, log_path: Path, csv_path: Path,
                   capture_time: datetime, config: dict, barcodes: list[str]) -> bool:
-    """Handle an ordinary specimen sheet: convert, validate, register, file away."""
-    jp2_path = tiff_path.with_suffix(".jp2")
-    try:
-        print("  Converting to JP2...")
-        tiff_to_jp2(tiff_path, jp2_path, config)
+    """Handle an ordinary specimen sheet: convert, validate, register, file away.
 
+    Produces two JP2s: a lossy view (done_jp2_dir, the IIIF-served copy) and a
+    lossless archival copy (done_jp2_lossless_dir) — see steps/convert.py.
+    """
+    jp2_path = tiff_path.with_suffix(".jp2")
+    lossless_path = tiff_path.with_name(f"{tiff_path.stem}_lossless.jp2")
+    try:
+        print("  Converting to JP2 (lossy)...")
+        tiff_to_jp2(tiff_path, jp2_path, config)
         named_jp2 = jp2_path.with_name(f"{accession_id}.jp2")
         jp2_path.rename(named_jp2)
         jp2_path = named_jp2
-        print(f"  Renamed to: {jp2_path.name}")
+
+        print("  Converting to JP2 (lossless)...")
+        tiff_to_jp2(tiff_path, lossless_path, config, lossless=True)
+        named_lossless = lossless_path.with_name(f"{accession_id}_lossless.jp2")
+        lossless_path.rename(named_lossless)
+        lossless_path = named_lossless
+        print(f"  Renamed to: {jp2_path.name} / {lossless_path.name}")
 
         print("  Validating...")
         validate_jp2(jp2_path, config)
+        lossless_cfg = {**config, "validation": config.get("validation_lossless", config["validation"])}
+        validate_jp2(lossless_path, lossless_cfg)
 
         folder_id = state.current_folder_id
         final_jp2_path = dirs["done_jp2"] / jp2_path.name
+        final_lossless_path = dirs["done_jp2_lossless"] / f"{accession_id}.jp2"
         print(f"  Registering (folder: {folder_id})...")
         register_sheet(
             accession_id, folder_id, jp2_path, log_path, csv_path,
@@ -166,13 +195,14 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
         named_tiff = tiff_path.with_name(f"{accession_id}.tiff")
         tiff_path.rename(named_tiff)
         shutil.move(str(jp2_path), final_jp2_path)
+        shutil.move(str(lossless_path), final_lossless_path)
         shutil.move(str(named_tiff), dirs["done_tif"] / named_tiff.name)
         print(f"  Done: {accession_id}")
         return True
 
     except Exception as e:
         print(f"  ERROR: {e}", file=sys.stderr)
-        for leftover in (jp2_path, tiff_path, tiff_path.with_name(f"{accession_id}.tiff")):
+        for leftover in (jp2_path, lossless_path, tiff_path, tiff_path.with_name(f"{accession_id}.tiff")):
             if leftover.exists():
                 shutil.move(str(leftover), dirs["error"] / leftover.name)
         return False

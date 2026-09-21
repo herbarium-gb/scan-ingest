@@ -1,14 +1,18 @@
 # Paths
-inbox_dir: inbox       # Drop scanned TIFFs here
-done_jp2_dir: done/jp2 # Successfully processed JP2 files (sheets + Folder-ID labels)
-done_tif_dir: done/tif # Successfully processed TIFF files (sheets + Folder-ID labels, renamed;
-                       # sheets keep .tiff, Folder-ID labels keep .tif — see steps/qr_read.py)
-error_dir: error       # Files that failed processing end up here
+inbox_dir: inbox                         # Drop scanned TIFFs here
+done_jp2_dir: done/jp2                   # Lossy view JP2s (sheets + Folder-ID labels) — the IIIF-served copy
+done_jp2_lossless_dir: done/jp2_lossless # Lossless archival JP2s — same images, reversible encode, kept separately
+done_tif_dir: done/tif                   # Successfully processed TIFF files (sheets + Folder-ID labels, renamed;
+                                          # sheets keep .tiff, Folder-ID labels keep .tif — see steps/qr_read.py)
+error_dir: error                         # Files that failed processing end up here
 log_dir: logs
 
-# JP2 encoding (opj_compress) — parameters matched to the Kakadu reference batch
+# JP2 encoding (opj_compress) — parameters matched to the Kakadu reference batch.
+# Used for both the lossy view and the lossless archival copy (steps/convert.py's
+# lossless=True only drops -r/-I; resolutions/progression/block/precinct/tile are
+# shared, per the recipe in notes/scan-ingest-pipeline.txt).
 jp2:
-  rate: 2.0               # Target bit rate in bits per pixel (matches kdu_compress -rate 2.0)
+  rate: 2.0               # Target bit rate in bits per pixel (matches kdu_compress -rate 2.0) — lossy only
   resolutions: 8          # Kakadu Clevels=7 = 7 decompositions = 8 resolution levels
   progression: RPCL       # Progression order — Kakadu Corder=RPCL
   block_size: [64, 64]    # Code-block size — Kakadu Cblk={64,64}
@@ -23,9 +27,18 @@ jp2:
     - [256, 256]
     - [256, 256]
 
-# Validation thresholds
+# Validation thresholds for the lossy view JP2 (done_jp2_dir)
 validation:
   min_width_px: 4000
   min_height_px: 6000
   min_file_size_mb: 5
   max_file_size_mb: 100
+
+# Validation thresholds for the lossless archival JP2 (done_jp2_lossless_dir) —
+# same resolution floor, but a much wider size range: reversible encoding runs
+# far larger than the lossy view (~70 MB observed on BookEye scans vs ~17-20 MB).
+validation_lossless:
+  min_width_px: 4000
+  min_height_px: 6000
+  min_file_size_mb: 20
+  max_file_size_mb: 250
