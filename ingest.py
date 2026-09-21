@@ -5,9 +5,9 @@ Processes TIFF files dropped in the inbox folder. Each file's QR code is read
 and classified as either:
 
   - a Folder-ID label (e.g. "GB-Folder_0036571") — the first image scanned
-    for a physical folder's batch. It is renamed and filed away as-is (no JP2
-    conversion); every SHEET processed after it inherits its folder_id, until
-    the next Folder-ID label is seen.
+    for a physical folder's batch. It goes through the same convert-to-JP2 +
+    validate steps as a sheet, then is filed away; every SHEET processed
+    after it inherits its folder_id, until the next Folder-ID label is seen.
   - an ordinary specimen sheet (e.g. "GB-0523177"), which goes through the
     full pipeline: convert TIFF -> JP2, validate, register (TSV log +
     FileMaker-import CSV), move to done/.
@@ -49,13 +49,26 @@ load_dotenv()
 def load_config(config_path: Path = Path("config.yml")) -> dict:
     with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
+
+    # DATA_DIR sets all six paths at once, under this fixed layout. Any of
+    # the individual *_DIR env vars below still takes precedence over it, so
+    # a single directory can be redirected without abandoning DATA_DIR for
+    # the rest.
+    data_dir = os.getenv("DATA_DIR")
+    if data_dir:
+        base = Path(data_dir)
+        config["inbox_dir"] = str(base / "upload")
+        config["done_jp2_dir"] = str(base / "done" / "jp2")
+        config["done_tif_dir"] = str(base / "done" / "tif")
+        config["error_dir"] = str(base / "error")
+        config["log_dir"] = str(base / "logs")
+
     env_overrides = {
-        "inbox_dir":         "INBOX_DIR",
-        "done_jp2_dir":      "DONE_JP2_DIR",
-        "done_tif_dir":      "DONE_TIF_DIR",
-        "done_folders_dir":  "DONE_FOLDERS_DIR",
-        "error_dir":         "ERROR_DIR",
-        "log_dir":           "LOG_DIR",
+        "inbox_dir":     "INBOX_DIR",
+        "done_jp2_dir":  "DONE_JP2_DIR",
+        "done_tif_dir":  "DONE_TIF_DIR",
+        "error_dir":     "ERROR_DIR",
+        "log_dir":       "LOG_DIR",
     }
     for key, env_var in env_overrides.items():
         if os.getenv(env_var):
@@ -65,12 +78,11 @@ def load_config(config_path: Path = Path("config.yml")) -> dict:
 
 def setup_dirs(config: dict) -> dict[str, Path]:
     dirs = {
-        "inbox":        Path(config["inbox_dir"]),
-        "done_jp2":     Path(config["done_jp2_dir"]),
-        "done_tif":     Path(config["done_tif_dir"]),
-        "done_folders": Path(config.get("done_folders_dir", "done/folders")),
-        "error":        Path(config["error_dir"]),
-        "logs":         Path(config["log_dir"]),
+        "inbox":    Path(config["inbox_dir"]),
+        "done_jp2": Path(config["done_jp2_dir"]),
+        "done_tif": Path(config["done_tif_dir"]),
+        "error":    Path(config["error_dir"]),
+        "logs":     Path(config["log_dir"]),
     }
     for d in dirs.values():
         d.mkdir(parents=True, exist_ok=True)
@@ -79,25 +91,45 @@ def setup_dirs(config: dict) -> dict[str, Path]:
 
 def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path],
                           state: FolderState, log_path: Path, csv_path: Path,
-                          capture_time: datetime, barcodes: list[str]) -> bool:
-    """Handle a Folder-ID label image: rename, file away, update state. No JP2."""
+                          capture_time: datetime, config: dict, barcodes: list[str]) -> bool:
+    """Handle a Folder-ID label image: convert to JP2, file away, update state.
+
+    Folder markers go through the same convert+validate steps as sheets —
+    they're real scanned images too, matching how Picturae's own delivery
+    data for this collection treats Folder rows (see
+    notes/species-tagging-options.txt).
+    """
+    named_tiff = tiff_path.with_name(f"{folder_id}.tif")
+    jp2_path = tiff_path.with_suffix(".jp2")
     try:
-        named_tiff = tiff_path.with_name(f"{folder_id}.tif")
         tiff_path.rename(named_tiff)
-        final_path = dirs["done_folders"] / named_tiff.name
-        shutil.move(str(named_tiff), final_path)
+
+        print("  Converting to JP2...")
+        tiff_to_jp2(named_tiff, jp2_path, config)
+        named_jp2 = jp2_path.with_name(f"{folder_id}.jp2")
+        jp2_path.rename(named_jp2)
+        jp2_path = named_jp2
+
+        print("  Validating...")
+        validate_jp2(jp2_path, config)
+
+        final_tiff_path = dirs["done_tif"] / named_tiff.name
+        final_jp2_path = dirs["done_jp2"] / jp2_path.name
 
         register_folder_marker(
-            folder_id, final_path, log_path, csv_path,
-            capture_time, final_path.as_posix(), barcodes=barcodes,
+            folder_id, jp2_path, log_path, csv_path,
+            capture_time, final_jp2_path.as_posix(), barcodes=barcodes,
         )
+        shutil.move(str(named_tiff), final_tiff_path)
+        shutil.move(str(jp2_path), final_jp2_path)
+
         state.set_current_folder(folder_id)
         print(f"  Folder marker: {folder_id} "
               f"(subsequent sheets will be tagged with this folder)")
         return True
     except Exception as e:
         print(f"  ERROR: {e}", file=sys.stderr)
-        for leftover in (tiff_path, tiff_path.with_name(f"{folder_id}.tif")):
+        for leftover in (tiff_path, named_tiff, jp2_path):
             if leftover.exists():
                 shutil.move(str(leftover), dirs["error"] / leftover.name)
         return False
@@ -168,7 +200,7 @@ def process_file(tiff_path: Path, dirs: dict[str, Path], state: FolderState,
 
     if kind == FOLDER:
         return process_folder_marker(tiff_path, code, dirs, state, log_path,
-                                      csv_path, capture_time, barcodes)
+                                      csv_path, capture_time, config, barcodes)
     else:
         assert kind == SHEET
         return process_sheet(tiff_path, code, dirs, state, log_path, csv_path,

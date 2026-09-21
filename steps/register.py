@@ -53,12 +53,12 @@ def register_sheet(accession_id: str, folder_id: str, jp2_path: Path, log_path: 
     )
 
 
-def register_folder_marker(folder_id: str, tiff_path: Path, log_path: Path,
+def register_folder_marker(folder_id: str, jp2_path: Path, log_path: Path,
                             csv_path: Path, capture_time: datetime,
                             file_pathway: str, barcodes: list[str] | None = None) -> None:
     """Register a Folder-ID label image: TSV log row + FileMaker-import CSV row."""
     _append_log(log_path, kind="FOLDER", ident=folder_id, folder_id=folder_id,
-                filename=tiff_path.name, size_mb=_size_mb(tiff_path), barcodes=barcodes)
+                filename=jp2_path.name, size_mb=_size_mb(jp2_path), barcodes=barcodes)
     _append_filemaker_csv(
         csv_path,
         object_type="Folder",

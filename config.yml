@@ -1,9 +1,9 @@
 # Paths
-inbox_dir: inbox          # Drop scanned TIFFs here
-done_jp2_dir: done/jp2       # Successfully processed JP2 files (specimen sheets)
-done_tif_dir: done/tif       # Successfully processed TIFF files (specimen sheets, renamed)
-done_folders_dir: done/folders  # Folder-ID label images (renamed, no JP2 — see notes/species-tagging-options.txt)
-error_dir: error             # Files that failed processing end up here
+inbox_dir: inbox       # Drop scanned TIFFs here
+done_jp2_dir: done/jp2 # Successfully processed JP2 files (sheets + Folder-ID labels)
+done_tif_dir: done/tif # Successfully processed TIFF files (sheets + Folder-ID labels, renamed;
+                       # sheets keep .tiff, Folder-ID labels keep .tif — see steps/qr_read.py)
+error_dir: error       # Files that failed processing end up here
 log_dir: logs
 
 # JP2 encoding (opj_compress) — parameters matched to the Kakadu reference batch
