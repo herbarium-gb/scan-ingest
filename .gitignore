@@ -1,0 +1,10 @@
+.env
+*.DS_Store
+__pycache__/
+*.pyc
+inbox/
+done/
+error/
+logs/
+psnr_out/
+previous/

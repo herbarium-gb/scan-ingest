@@ -1,0 +1,17 @@
+name: scan-ingest
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pillow
+  - numpy
+  - pyzbar
+  - zbar
+  - openjpeg
+  - libtiff
+  - pip
+  - pip:
+    - python-dotenv
+    - pyyaml
+    - requests

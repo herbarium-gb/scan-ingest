@@ -1,0 +1,31 @@
+# Paths
+inbox_dir: inbox          # Drop scanned TIFFs here
+done_jp2_dir: done/jp2       # Successfully processed JP2 files (specimen sheets)
+done_tif_dir: done/tif       # Successfully processed TIFF files (specimen sheets, renamed)
+done_folders_dir: done/folders  # Folder-ID label images (renamed, no JP2 — see notes/species-tagging-options.txt)
+error_dir: error             # Files that failed processing end up here
+log_dir: logs
+
+# JP2 encoding (opj_compress) — parameters matched to the Kakadu reference batch
+jp2:
+  rate: 2.0               # Target bit rate in bits per pixel (matches kdu_compress -rate 2.0)
+  resolutions: 8          # Kakadu Clevels=7 = 7 decompositions = 8 resolution levels
+  progression: RPCL       # Progression order — Kakadu Corder=RPCL
+  block_size: [64, 64]    # Code-block size — Kakadu Cblk={64,64}
+  tile_size: [1024, 1024] # Internal tiles for faster IIIF region extraction
+  precinct_sizes:         # One entry per resolution level (smallest first)
+    - [32, 32]
+    - [64, 64]
+    - [64, 64]
+    - [128, 128]
+    - [128, 128]
+    - [256, 256]
+    - [256, 256]
+    - [256, 256]
+
+# Validation thresholds
+validation:
+  min_width_px: 4000
+  min_height_px: 6000
+  min_file_size_mb: 5
+  max_file_size_mb: 100
