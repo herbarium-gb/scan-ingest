@@ -101,10 +101,11 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
     they're real scanned images too, matching how Picturae's own delivery
     data for this collection treats Folder rows (see
     notes/species-tagging-options.txt). Lossy view only, no lossless
-    archival copy: a folder cover is an administrative label, not the
-    specimen being preserved, and it compresses disproportionately poorly
-    (kraft paper's grain carries more pixel-level noise than a sheet's
-    background) — see steps/convert.py for the lossless path sheets use.
+    archival copy, and the TIFF is discarded rather than kept in done_tif:
+    a folder cover is an administrative label, not the specimen being
+    preserved, so there's nothing worth keeping full-resolution once the
+    IIIF view JP2 exists — see steps/convert.py for the lossless path
+    sheets use, and their own full done_tif retention.
     """
     named_tiff = tiff_path.with_name(f"{folder_id}.tif")
     jp2_path = tiff_path.with_suffix(".jp2")
@@ -120,15 +121,16 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
         print("  Validating...")
         validate_jp2(jp2_path, config)
 
-        final_tiff_path = dirs["done_tif"] / named_tiff.name
         final_jp2_path = dirs["done_jp2"] / jp2_path.name
 
         register_folder_marker(
             folder_id, jp2_path, log_path, csv_path,
             capture_time, final_jp2_path.as_posix(), barcodes=barcodes,
         )
-        shutil.move(str(named_tiff), final_tiff_path)
         shutil.move(str(jp2_path), final_jp2_path)
+        # Only discard the TIFF once the JP2 is safely in its final place —
+        # never delete it as a side effect of a failed/partial conversion.
+        named_tiff.unlink()
 
         state.set_current_folder(folder_id)
         print(f"  Folder marker: {folder_id} "
@@ -181,8 +183,8 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
         )
 
         # Sheets keep the four-letter .tiff extension so they're visually
-        # distinct from Folder-ID label images (.tif) at a glance — see
-        # notes/species-tagging-options.txt.
+        # distinct from Folder-ID label images (.tif) at a glance, e.g. in
+        # error/ if something fails — see notes/species-tagging-options.txt.
         named_tiff = tiff_path.with_name(f"{accession_id}.tiff")
         tiff_path.rename(named_tiff)
         shutil.move(str(jp2_path), final_jp2_path)

@@ -56,7 +56,7 @@ days' scans.
 | Validate | `steps/validate.py` | Rejects a JP2 below the configured minimum resolution/file size, or above the maximum — separate thresholds for the lossy view (`validation`) and the much larger lossless copy (`validation_lossless`). |
 | Register | `steps/register.py` | Appends a row to the daily TSV batch log and to a FileMaker-import CSV (Picturae's own column header, most taxonomy columns left blank). Only the lossy view's path is recorded — the lossless copy isn't part of that schema. |
 | Track folder | `steps/state.py` | Persists the "current folder" ID across runs (`logs/current_folder_state.txt`), since a folder's label and its last sheets can land in different nightly runs. |
-| File away | `ingest.py` | Moves the lossy JP2 to `done/jp2/` and the TIFF to `done/tif/` (sheets and Folder-ID labels together in each, matching Picturae's own flat delivery layout — kept apart only by extension, `.tiff` vs `.tif`); a sheet's lossless JP2 also goes to `done/jp2_lossless/`. Anything that raises along the way goes to `error/` instead. |
+| File away | `ingest.py` | Moves the lossy JP2 to `done/jp2/` (sheets and Folder-ID labels together, matching Picturae's own flat delivery layout). A sheet's TIFF goes to `done/tif/` and its lossless JP2 to `done/jp2_lossless/`; a Folder-ID label's TIFF is deleted instead — no lossless copy exists to make keeping it worthwhile. Anything that raises along the way goes to `error/` instead. |
 
 A sheet's QR always identifies the sheet/image; a barcode (0 or more per
 sheet) identifies one "kollekt" (field-collection event) mounted on it — see
@@ -109,8 +109,8 @@ Standalone dev/test tools, separate from the `ingest.py` entrypoint:
 done/
   jp2/           lossy view JP2s (sheets + Folder-ID labels), renamed to accession/folder ID
   jp2_lossless/  lossless archival JP2s, sheets only — pixel-identical to the source TIFF
-  tif/           TIFFs (sheets + Folder-ID labels), renamed to accession ID (.tiff)
-                 or folder ID (.tif) — the extension is the only thing telling them apart
+  tif/           TIFFs, sheets only, renamed to accession ID (.tiff) — a Folder-ID
+                 label's TIFF is deleted once its JP2 exists, not kept here
 error/  anything that failed a step, left under its original/partial name
 logs/
   ingest_<date>.tsv              per-run batch log
