@@ -81,11 +81,13 @@ git-ignored secrets/paths:
 - **`.env`** (git-ignored — copy from `.env.template`) — server-specific
   paths that override `config.yml`'s relative defaults, plus FileMaker Data
   API credentials (`FM_BASE_URL`/`FM_DATABASE`/`FM_LAYOUT`/`FM_USER`/
-  `FM_PASSWORD`). `DATA_DIR` points all six directories (`upload`,
-  `done/jp2`, `done/jp2_lossless`, `done/tif`, `error`, `logs`) at once; set
-  `INBOX_DIR`/`DONE_JP2_DIR`/`DONE_JP2_LOSSLESS_DIR`/`DONE_TIF_DIR`/
-  `ERROR_DIR`/`LOG_DIR` instead (or in addition) to redirect a single one of
-  those paths.
+  `FM_PASSWORD`). In production, set `INBOX_DIR`/`DONE_JP2_DIR`/
+  `DONE_JP2_LOSSLESS_DIR`/`DONE_TIF_DIR`/`ERROR_DIR`/`LOG_DIR` individually —
+  they belong on different storage (`DONE_JP2_DIR` *is* herbarium-platform's
+  `IMAGE_DATA_PATH` tree; `DONE_TIF_DIR`/`ERROR_DIR`/`LOG_DIR` are local to
+  wherever `ingest.py` runs). `DATA_DIR` is a local dev/testing
+  shortcut that points all six at one shared folder instead — any individual
+  var above still overrides it for that one path.
 
 ## Scripts
 
