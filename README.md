@@ -81,13 +81,17 @@ git-ignored secrets/paths:
 - **`.env`** (git-ignored — copy from `.env.template`) — server-specific
   paths that override `config.yml`'s relative defaults, plus FileMaker Data
   API credentials (`FM_BASE_URL`/`FM_DATABASE`/`FM_LAYOUT`/`FM_USER`/
-  `FM_PASSWORD`). In production, set `INBOX_DIR`/`DONE_JP2_DIR`/
-  `DONE_JP2_LOSSLESS_DIR`/`DONE_TIF_DIR`/`ERROR_DIR`/`LOG_DIR` individually —
-  they belong on different storage (`DONE_JP2_DIR` *is* herbarium-platform's
-  `IMAGE_DATA_PATH` tree; `DONE_TIF_DIR`/`ERROR_DIR`/`LOG_DIR` are local to
-  wherever `ingest.py` runs). `DATA_DIR` is a local dev/testing
-  shortcut that points all six at one shared folder instead — any individual
-  var above still overrides it for that one path.
+  `FM_PASSWORD`). In production, three things have their own home rather
+  than six independent paths to track: `INBOX_DIR` (where BookEye's SMB
+  share lands), `IMAGE_STORAGE_DIR` (gives `jp2/` — herbarium-platform's
+  own `IMAGE_DATA_PATH` tree — and `jp2_lossless/`, archival only, never
+  read by RAIS/IIIF), and `LOCAL_STATE_DIR` (gives `tif/`/`error/`/`logs/`,
+  local to wherever `ingest.py` runs — TIFF is temporary, not the archive).
+  Any of the six individual `DONE_JP2_DIR`/`DONE_JP2_LOSSLESS_DIR`/
+  `DONE_TIF_DIR`/`ERROR_DIR`/`LOG_DIR` vars still overrides its grouped
+  parent for a one-off redirect. `DATA_DIR` is a local dev/testing-only
+  shortcut that points everything at one shared folder instead (lowest
+  precedence of all of these).
 
 ## Scripts
 

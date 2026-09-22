@@ -49,10 +49,10 @@ def load_config(config_path: Path = Path("config.yml")) -> dict:
     with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    # DATA_DIR sets all six paths at once, under this fixed layout. Any of
-    # the individual *_DIR env vars below still takes precedence over it, so
-    # a single directory can be redirected without abandoning DATA_DIR for
-    # the rest.
+    # DATA_DIR sets all six paths at once, under this fixed layout. Local
+    # dev/testing only — lumps the image-storage paths and the local
+    # operational ones (error/log) under one shared base, which production
+    # shouldn't do (see IMAGE_STORAGE_DIR below, and .env.template).
     data_dir = os.getenv("DATA_DIR")
     if data_dir:
         base = Path(data_dir)
@@ -60,6 +60,30 @@ def load_config(config_path: Path = Path("config.yml")) -> dict:
         config["done_jp2_dir"] = str(base / "done" / "jp2")
         config["done_jp2_lossless_dir"] = str(base / "done" / "jp2_lossless")
         config["done_tif_dir"] = str(base / "done" / "tif")
+        config["error_dir"] = str(base / "error")
+        config["log_dir"] = str(base / "logs")
+
+    # IMAGE_STORAGE_DIR sets just the two paths that actually belong
+    # together on the image storage server (done_jp2_dir is herbarium-
+    # platform's own IMAGE_DATA_PATH tree; done_jp2_lossless_dir is a
+    # separate top-level folder there for the archival copy). Takes
+    # precedence over DATA_DIR; the individual *_DIR env vars below still
+    # take precedence over this, for a one-off override.
+    image_storage_dir = os.getenv("IMAGE_STORAGE_DIR")
+    if image_storage_dir:
+        base = Path(image_storage_dir)
+        config["done_jp2_dir"] = str(base / "jp2")
+        config["done_jp2_lossless_dir"] = str(base / "jp2_lossless")
+
+    # LOCAL_STATE_DIR sets the three paths that belong together on whatever
+    # machine ingest.py itself runs on (TIFF is temporary, not the
+    # long-term archive; error/log are operational state tied to the
+    # running code, not the image archive). Same precedence as
+    # IMAGE_STORAGE_DIR above.
+    local_state_dir = os.getenv("LOCAL_STATE_DIR")
+    if local_state_dir:
+        base = Path(local_state_dir)
+        config["done_tif_dir"] = str(base / "tif")
         config["error_dir"] = str(base / "error")
         config["log_dir"] = str(base / "logs")
 
