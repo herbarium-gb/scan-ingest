@@ -5,8 +5,7 @@ record in Herbariet_databas_test via the FileMaker Data API.
 Creates one record with a clearly-marked test value in AccessionNo, reads it
 back to confirm the round-trip, then deletes it and logs out — leaves nothing
 behind if it succeeds. Meant as the seed of the real Postgres -> FileMaker
-sync (see notes/scan-ingest-pipeline.txt in 260601-Resumed-scanning), not a
-throwaway.
+sync (see notes/scan-ingest-pipeline.txt), not a throwaway.
 
 Reads all connection details from environment variables — never hardcode
 credentials here, never put real values in this file or commit a filled-in

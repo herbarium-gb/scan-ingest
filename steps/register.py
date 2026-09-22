@@ -1,10 +1,10 @@
 """Register a processed image: a TSV batch log, and a CSV for FileMaker import.
 
 The FileMaker CSV deliberately reuses Picturae's own column names (see
-picturae/163-Gothenburg-GB-Herbarium-Digitization-*.csv in the
-260601-Resumed-scanning project folder) so downstream tooling — FileMaker
-import scripts, anything that already knows this header — handles both eras
-of data the same way. Most taxonomy columns are left blank at ingest time:
+picturae/163-Gothenburg-GB-Herbarium-Digitization-*.csv) so downstream
+tooling — FileMaker import scripts, anything that already knows this
+header — handles both eras of data the same way. Most taxonomy columns
+are left blank at ingest time:
 species determination happens later, by an expert, joined on Folder QR (see
 notes/species-tagging-options.txt) — only Object Type, Folder QR, the
 Specimen QR fields, Original Barcode, Creation Time and Original File Pathway

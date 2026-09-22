@@ -21,7 +21,7 @@ def tiff_to_jp2(tiff_path: Path, jp2_path: Path, config: dict, lossless: bool = 
     lossless=True drops the -r (target ratio) and -I (irreversible 9/7
     wavelet) flags, giving a reversible archival encode — same resolutions/
     progression/block/precinct/tile settings otherwise, per the lossless
-    recipe in notes/scan-ingest-pipeline.txt (260601-Resumed-scanning).
+    recipe in notes/scan-ingest-pipeline.txt.
     """
     jp2_cfg = config.get("jp2", {})
     resolutions = jp2_cfg.get("resolutions", 8)

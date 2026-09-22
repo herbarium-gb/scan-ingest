@@ -91,10 +91,10 @@ git-ignored secrets/paths:
 
 Standalone dev/test tools, separate from the `ingest.py` entrypoint:
 
-- `scripts/compression_quality_test.py` — encodes a TIFF at several JP2 compression rates
-  and reports size/PSNR against the source, to help pick an encoding rate
-  matching Picturae's quality/size. Defaults to `previous/*.tif` if no file
-  is given (not present in a fresh checkout — see the script's docstring).
+- `scripts/compression_quality_test.py` — encodes one or more TIFFs at several
+  JP2 compression rates and reports size/PSNR against the source, to help
+  pick an encoding rate matching Picturae's quality/size. Takes TIFF paths
+  as arguments — no default sample bundled with the repo.
 - `scripts/filemaker_test.py` — one-off round-trip test (create → read →
   delete) against the FileMaker Data API, verifying the `Scan-importer`
   account can write to `Herbariet_databas_test`. Seed of a future

@@ -21,11 +21,10 @@ default filenames start with a per-job counter that resets each session, so
 sorting by filename can interleave different days' files; sorting by file
 modification time avoids that. This mirrors how Picturae's own 2023 delivery
 data for this collection groups sheets under a folder purely by capture-time
-adjacency (see notes/species-tagging-options.txt in 260601-Resumed-scanning),
-not by anything read off the scanner in real time.
+adjacency, not by anything read off the scanner in real time.
 
-See notes/species-tagging-options.txt (260601-Resumed-scanning project
-folder) for the full design discussion behind this Folder-ID grouping.
+See notes/species-tagging-options.txt for the full design discussion behind
+this Folder-ID grouping.
 """
 
 import os
@@ -78,6 +77,16 @@ def load_config(config_path: Path = Path("config.yml")) -> dict:
     return config
 
 
+def dated_path(base_dir: Path, capture_time: datetime, filename: str) -> Path:
+    """base_dir/YYYY/MM/DD/filename, by capture date — creates the date
+    subdirectory if needed. Keeps any one directory from growing unbounded
+    as the collection scales, and matches how IMAGE_DATA_PATH is organized
+    for IIIF serving (see notes/scan-ingest-pipeline.txt)."""
+    subdir = base_dir / f"{capture_time:%Y}" / f"{capture_time:%m}" / f"{capture_time:%d}"
+    subdir.mkdir(parents=True, exist_ok=True)
+    return subdir / filename
+
+
 def setup_dirs(config: dict) -> dict[str, Path]:
     dirs = {
         "inbox":             Path(config["inbox_dir"]),
@@ -121,7 +130,7 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
         print("  Validating...")
         validate_jp2(jp2_path, config)
 
-        final_jp2_path = dirs["done_jp2"] / jp2_path.name
+        final_jp2_path = dated_path(dirs["done_jp2"], capture_time, jp2_path.name)
 
         register_folder_marker(
             folder_id, jp2_path, log_path, csv_path,
@@ -174,8 +183,8 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
         validate_jp2(lossless_path, lossless_cfg)
 
         folder_id = state.current_folder_id
-        final_jp2_path = dirs["done_jp2"] / jp2_path.name
-        final_lossless_path = dirs["done_jp2_lossless"] / f"{accession_id}.jp2"
+        final_jp2_path = dated_path(dirs["done_jp2"], capture_time, jp2_path.name)
+        final_lossless_path = dated_path(dirs["done_jp2_lossless"], capture_time, f"{accession_id}.jp2")
         print(f"  Registering (folder: {folder_id})...")
         register_sheet(
             accession_id, folder_id, jp2_path, log_path, csv_path,
@@ -189,7 +198,7 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
         tiff_path.rename(named_tiff)
         shutil.move(str(jp2_path), final_jp2_path)
         shutil.move(str(lossless_path), final_lossless_path)
-        shutil.move(str(named_tiff), dirs["done_tif"] / named_tiff.name)
+        shutil.move(str(named_tiff), dated_path(dirs["done_tif"], capture_time, named_tiff.name))
         print(f"  Done: {accession_id}")
         return True
 

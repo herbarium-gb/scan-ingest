@@ -3,10 +3,10 @@
 Two kinds of QR code can appear on a scanned TIFF:
 
 - A Folder-ID label (e.g. "GB-Folder_0036571"), scanned as the first image of
-  a physical folder's batch. See notes/species-tagging-options.txt in the
-  260601-Resumed-scanning project folder for the full design rationale — this
-  mirrors how Picturae's own 2023 delivery data for this collection is
-  structured (Object Type "Folder" vs "Sheet", grouped by capture order).
+  a physical folder's batch. See notes/species-tagging-options.txt for the
+  full design rationale — this mirrors how Picturae's own 2023 delivery data
+  for this collection is structured (Object Type "Folder" vs "Sheet",
+  grouped by capture order).
 - A specimen's own accession ID (e.g. "GB-0523177"), on an ordinary sheet.
 
 QR vs. barcode meaning (Bengt, 2026-09-11): the QR code always identifies the

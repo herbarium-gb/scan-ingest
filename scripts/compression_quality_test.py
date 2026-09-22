@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
-"""Jämför JP2-kompression av BookEye-TIFF vid olika nivåer.
+"""Compare JP2 compression of a BookEye TIFF at several rates.
 
-Kör:  python scripts/compression_quality_test.py <bild1.tif> <bild2.tif> ...
-Utan argument används previous/*.tif som fallback (går att köra från valfri
-katalog, sökvägar är relativa till repo-roten).
+For each TIFF and each rate in RATES_BPP, encodes a JP2 into
+compression_quality_out/ and reports its size and PSNR (peak
+signal-to-noise ratio, see psnr() below) against the source TIFF. Purpose:
+find a rate that gives Picturae-like quality/size for BookEye material.
 
-För varje TIFF och varje kompressionsnivå skrivs en JP2 till
-compression_quality_out/, och storlek + PSNR (kvalitetsmått, se
-funktionen psnr() nedan) mot käll-TIFF:en rapporteras. Syftet är att
-hitta en nivå som ger Picturae-liknande kvalitet/storlek för
-BookEye-materialet.
+Picturae reference (GB-0500017): ~12:1, ~17 MB, and our own re-encoding of
+it lands around ~49 dB. 40+ dB = visually indistinguishable.
 
-Picturae-referens (GB-0500017): ~12:1, ~17 MB, och vår omkodning låg på ~49 dB
-mot deras data. 40+ dB = visuellt omärkbar skillnad.
-
-Riktiga BookEye-TIFF:ar finns i:
-  260601-Resumed-scanning/bookeye/*.tif
+Run:  python scripts/compression_quality_test.py <image1.tif> <image2.tif> ...
+(works from any directory — paths are relative to the repo root)
 """
 
 import math
@@ -32,9 +27,9 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from steps.convert import tiff_to_jp2
 
-# Kompressionsnivåer att testa, som bits-per-pixel. För 24-bit RGB blir
-# ratio ≈ 24 / bpp:  3.0→8:1  2.4→10:1  2.0→12:1 (Picturae)  1.5→16:1
-# 1.2→20:1  1.0→24:1
+# Compression levels to test, as bits per pixel. For 24-bit RGB, ratio ≈
+# 24 / bpp:  3.0→8:1  2.4→10:1  2.0→12:1 (Picturae)  1.5→16:1  1.2→20:1
+# 1.0→24:1
 RATES_BPP = [3.0, 2.4, 2.0, 1.7, 1.5, 1.2, 1.0]
 
 config = yaml.safe_load(open(REPO_ROOT / "config.yml"))
@@ -49,7 +44,7 @@ def psnr(src: np.ndarray, enc: np.ndarray) -> float:
 
 
 def decode_jp2(jp2: Path) -> np.ndarray:
-    """Avkoda JP2 via opj_decompress (samma toolchain som kodningen)."""
+    """Decode via opj_decompress (the same toolchain used to encode)."""
     tmp = jp2.with_suffix(".decoded.tif")
     subprocess.run(["opj_decompress", "-i", str(jp2), "-o", str(tmp)],
                    check=True, capture_output=True)
@@ -60,14 +55,9 @@ def decode_jp2(jp2: Path) -> np.ndarray:
 
 
 def main() -> None:
-    tiffs = [Path(a) for a in sys.argv[1:]]
+    tiffs = [Path(a) for a in sys.argv[1:] if Path(a).exists()]
     if not tiffs:
-        tiffs = sorted((REPO_ROOT / "previous").glob("*.tif"))
-        print("Inga argument – använder previous/*.tif. "
-              "Ange BookEye-TIFF:ar som argument för det riktiga testet.\n")
-    tiffs = [t for t in tiffs if t.exists()]
-    if not tiffs:
-        print("Hittade inga TIFF-filer.")
+        print("Usage: python scripts/compression_quality_test.py <image.tif> ...")
         return
 
     for tif in tiffs:
@@ -75,7 +65,7 @@ def main() -> None:
         src = np.array(Image.open(tif))
         h, w = src.shape[:2]
         raw_mb = w * h * 3 / (1024 * 1024)
-        print(f"  {w}×{h}, okomprimerat ~{raw_mb:.0f} MB")
+        print(f"  {w}×{h}, uncompressed ~{raw_mb:.0f} MB")
         print(f"  {'bpp':>4}  {'ratio':>6}  {'MB':>6}  {'PSNR dB':>8}")
 
         for bpp in RATES_BPP:
@@ -84,15 +74,15 @@ def main() -> None:
             try:
                 tiff_to_jp2(tif, jp2, cfg)
             except Exception as e:
-                print(f"  {bpp:4.1f}  FEL: {e}")
+                print(f"  {bpp:4.1f}  FAILED: {e}")
                 continue
             size_mb = jp2.stat().st_size / (1024 * 1024)
             db = psnr(src, decode_jp2(jp2))
             print(f"  {bpp:4.1f}  {raw_mb / size_mb:5.0f}:1  {size_mb:6.1f}  {db:8.1f}")
         print()
 
-    print(f"JP2-filer sparade i {out_dir}/ för visuell granskning.")
-    print("Picturae-referens: ~12:1, ~17 MB. 40+ dB = visuellt omärkbar skillnad.")
+    print(f"JP2 files saved to {out_dir}/ for visual inspection.")
+    print("Picturae reference: ~12:1, ~17 MB. 40+ dB = visually indistinguishable.")
 
 
 if __name__ == "__main__":
