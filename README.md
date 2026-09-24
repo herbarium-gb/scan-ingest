@@ -57,6 +57,7 @@ days' scans.
 | Register | `steps/register.py` | Appends a row to the daily TSV batch log and to a FileMaker-import CSV (Picturae's own column header, most taxonomy columns left blank). Only the lossy view's path is recorded — the lossless copy isn't part of that schema. |
 | Track folder | `steps/state.py` | Persists the "current folder" ID across runs (`logs/current_folder_state.txt`), since a folder's label and its last sheets can land in different nightly runs. |
 | File away | `ingest.py` | Moves the lossy JP2 to `done/jp2/` (sheets and Folder-ID labels together, matching Picturae's own flat delivery layout). A sheet's lossless JP2 goes to `done/jp2_lossless/`, and its TIFF is deleted once that copy validates (pixel-identical, so nothing is lost) — or moved to `done/tif/` instead if `tiff.keep` is `true` in `config.yml`. A Folder-ID label's TIFF is always deleted — no lossless copy exists to make keeping it worthwhile. Anything that raises along the way goes to `error/` instead. |
+| Create FileMaker record | `steps/filemaker.py` | Best-effort, once all files are processed: creates a skeleton record in Herbariet_databas via the Data API for each sheet filed away — only `AccessionNo` and `Löpnr`, the rest is transcribed by staff later. Created in ascending Löpnr order (not scan order), since FileMaker shows unsorted records in creation order. A record that already exists for that AccessionNo is left alone. Skipped if `FM_BASE_URL` isn't set; a failure is logged (`logs/filemaker_warnings_<date>.log`) but never fails the sheet. Folder-ID labels get no record. |
 | Update shards | `ingest.py` | Best-effort, after the run: calls herbarium-platform's `build_shards.py` for each date touched, so new images become viewable without a manual step. Skipped if `HERBARIUM_PLATFORM_DIR` isn't set; a failure is logged (`logs/shard_warnings_<date>.log`) but never fails the ingest run — a missed update is safe to redo by hand later. |
 
 A sheet's QR always identifies the sheet/image; a barcode (0 or more per
@@ -94,6 +95,9 @@ git-ignored secrets/paths:
   directory. Any of the six individual `DONE_JP2_DIR`/`DONE_JP2_LOSSLESS_DIR`/
   `DONE_TIF_DIR`/`ERROR_DIR`/`LOG_DIR` vars still overrides its grouped
   parent for a one-off redirect.
+- `FM_BASE_URL`/`FM_DATABASE`/`FM_LAYOUT`/`FM_USER`/`FM_PASSWORD` —
+  optional; FileMaker Data API connection for the skeleton-record step.
+  Unset `FM_BASE_URL` skips the step entirely.
 - `HERBARIUM_PLATFORM_DIR`/`SHARD_TARGET` — optional; point at a
   herbarium-platform checkout to have `ingest.py` trigger a shard update
   after each run. Unset skips the step entirely.
@@ -110,6 +114,10 @@ Standalone dev/test tools, separate from the `ingest.py` entrypoint:
   delete) against the FileMaker Data API, verifying the `Scan-importer`
   account can write to `Herbariet_databas_test`. Seed of a future
   Postgres → FileMaker sync.
+- `scripts/filemaker_delete_test_records.py GB-… GB-…` — deletes the records
+  with these AccessionNos, to re-test `ingest.py`'s FileMaker step from a
+  known state. Refuses unless `FM_DATABASE` ends in `_test`; asks before
+  deleting.
 - `scripts/reset_local_test_output.py` — clears `done/`, `error/`, and
   `logs/` for a clean local re-run of `ingest.py`. Always targets these
   repo-relative directories, ignoring `.env`.
@@ -127,5 +135,6 @@ logs/
   ingest_<date>.tsv              per-run batch log
   filemaker_import_<date>.csv    new rows for FileMaker import
   current_folder_state.txt       persisted current-folder ID
+  filemaker_warnings_<date>.log  sheets whose FileMaker record wasn't created, if any
   shard_warnings_<date>.log      failed shard updates, if any (safe to rerun by hand)
 ```

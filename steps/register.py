@@ -10,10 +10,9 @@ notes/species-tagging-options.txt) — only Object Type, Folder QR, the
 Specimen QR fields, Original Barcode, Creation Time and Original File Pathway
 are filled in.
 
-This CSV is the FileMaker integration path (replaces the old unimplemented
-FileMaker Data API placeholder) — matches the original plan in
-notes/scan-ingest-pipeline.txt: "Append a row to a CSV for import into
-FileMaker".
+The CSV carries the full Picturae-format row for later import; the
+skeleton registration record itself is created directly via the Data API
+(see steps/filemaker.py).
 """
 
 import csv

@@ -40,6 +40,7 @@ import yaml
 from dotenv import load_dotenv
 
 from steps.convert import tiff_to_jp2
+from steps.filemaker import FileMakerClient, FileMakerError, CREATED
 from steps.qr_read import decode_codes, classify_code, FOLDER, SHEET
 from steps.register import register_sheet, register_folder_marker
 from steps.state import FolderState
@@ -248,7 +249,8 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
 
 
 def process_file(tiff_path: Path, dirs: dict[str, Path], state: FolderState,
-                 log_path: Path, csv_path: Path, config: dict) -> bool:
+                 log_path: Path, csv_path: Path, config: dict,
+                 filed_sheets: list[str]) -> bool:
     print(f"Processing: {tiff_path.name}")
     # Capture time = when BookEye actually wrote this file, not when ingest
     # happens to process it later — see capture_time_of(). Read this before
@@ -272,8 +274,36 @@ def process_file(tiff_path: Path, dirs: dict[str, Path], state: FolderState,
                                       csv_path, capture_time, config, barcodes)
     else:
         assert kind == SHEET
-        return process_sheet(tiff_path, code, dirs, state, log_path, csv_path,
-                              capture_time, config, barcodes)
+        ok = process_sheet(tiff_path, code, dirs, state, log_path, csv_path,
+                           capture_time, config, barcodes)
+        if ok:
+            filed_sheets.append(code)
+        return ok
+
+
+def create_filemaker_records(fm: FileMakerClient, accession_ids: list[str],
+                             warn_log: Path) -> None:
+    """Best-effort: create each filed sheet's skeleton record in FileMaker
+    (see steps/filemaker.py), in ascending Löpnr order rather than scan
+    order — FileMaker shows unsorted records in creation order, and sorting
+    the whole register on open is too slow, so the order has to be right
+    from the start. (Only within one run: a later run's lower numbers still
+    land after an earlier run's higher ones.)
+
+    Never fails the run — the images are already safely in place, and a
+    missing record can be created later, so a FileMaker/network error is
+    logged to warn_log instead."""
+    ordered = sorted(accession_ids, key=lambda a: int(a.removeprefix("GB-")))
+    print(f"\nCreating FileMaker records ({fm.database}) for {len(ordered)} sheet(s)...")
+    for accession_id in ordered:
+        try:
+            result = fm.create_skeleton(accession_id)
+            print(f"  {accession_id}: {'created' if result == CREATED else 'already exists'}")
+        except Exception as e:
+            msg = f"FileMaker record not created for {accession_id} ({fm.database}): {e}"
+            print(f"  WARNING: {msg}", file=sys.stderr)
+            with open(warn_log, "a", encoding="utf-8") as f:
+                f.write(f"{datetime.now().isoformat(timespec='seconds')}\t{msg}\n")
 
 
 def main() -> None:
@@ -295,17 +325,37 @@ def main() -> None:
         print("No TIFF files found in inbox.")
         return
 
+    # Checked before touching any file: a half-filled FM_* config is a
+    # setup mistake to fix first, not something to warn about per sheet.
+    try:
+        fm = FileMakerClient.from_env()
+    except FileMakerError as e:
+        sys.exit(f"FileMaker config error: {e}")
+    if fm is None:
+        print("FM_BASE_URL not set — skipping FileMaker records.")
+    fm_warn_log = dirs["logs"] / f"filemaker_warnings_{date_str}.log"
+
     print(f"Found {len(tiffs)} file(s) to process. "
           f"Starting folder: {state.current_folder_id}\n")
     ok = fail = 0
     processed_dates = set()
-    for tiff in tiffs:
-        capture_date = capture_time_of(tiff).date()
-        if process_file(tiff, dirs, state, log_path, csv_path, config):
-            ok += 1
-            processed_dates.add(capture_date)
-        else:
-            fail += 1
+    filed_sheets = []
+    try:
+        for tiff in tiffs:
+            capture_date = capture_time_of(tiff).date()
+            if process_file(tiff, dirs, state, log_path, csv_path, config,
+                            filed_sheets):
+                ok += 1
+                processed_dates.add(capture_date)
+            else:
+                fail += 1
+    finally:
+        # Also after a crash mid-run: sheets already filed still get their
+        # records.
+        if fm:
+            if filed_sheets:
+                create_filemaker_records(fm, filed_sheets, fm_warn_log)
+            fm.close()
 
     print(f"\nDone. {ok} succeeded, {fail} failed. "
           f"Ending folder: {state.current_folder_id}")
