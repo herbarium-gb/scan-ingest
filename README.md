@@ -118,9 +118,11 @@ Standalone dev/test tools, separate from the `ingest.py` entrypoint:
   with these AccessionNos, to re-test `ingest.py`'s FileMaker step from a
   known state. Refuses unless `FM_DATABASE` ends in `_test`; asks before
   deleting.
-- `scripts/reset_local_test_output.py` — clears `done/`, `error/`, and
-  `logs/` for a clean local re-run of `ingest.py`. Always targets these
-  repo-relative directories, ignoring `.env`.
+- `scripts/reset_local_test_output.py` — empties every directory
+  `ingest.py` writes to (plus inbox TIFFs and the current-folder state) for
+  a clean local re-run, then refills the inbox from `TEST_TIFF_DIR` if set.
+  Uses the same `.env` paths as `ingest.py`, but refuses to run unless they
+  all lie inside a directory containing a `.test-sandbox` marker file.
 
 ## Output layout
 
