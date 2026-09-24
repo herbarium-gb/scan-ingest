@@ -18,16 +18,18 @@ species gets joined onto Folder QR later, by an expert.
 
 Files are processed in scan (capture) order, not filename order — BookEye's
 default filenames start with a per-job counter that resets each session, so
-sorting by filename can interleave different days' files; sorting by file
-modification time avoids that. This mirrors how Picturae's own 2023 delivery
-data for this collection groups sheets under a folder purely by capture-time
-adjacency, not by anything read off the scanner in real time.
+sorting by filename can interleave different days' files; sorting by
+capture time (see capture_time_of()) avoids that. This mirrors how
+Picturae's own 2023 delivery data for this collection groups sheets under a
+folder purely by capture-time adjacency, not by anything read off the
+scanner in real time.
 
 See notes/species-tagging-options.txt for the full design discussion behind
 this Folder-ID grouping.
 """
 
 import os
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -49,31 +51,17 @@ def load_config(config_path: Path = Path("config.yml")) -> dict:
     with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    # DATA_DIR sets all six paths at once, under this fixed layout. Local
-    # dev/testing only — lumps the image-storage paths and the local
-    # operational ones (error/log) under one shared base, which production
-    # shouldn't do (see IMAGE_STORAGE_DIR below, and .env.template).
-    data_dir = os.getenv("DATA_DIR")
-    if data_dir:
-        base = Path(data_dir)
-        config["inbox_dir"] = str(base / "upload")
-        config["done_jp2_dir"] = str(base / "done" / "jp2")
-        config["done_jp2_lossless_dir"] = str(base / "done" / "jp2_lossless")
-        config["done_tif_dir"] = str(base / "done" / "tif")
-        config["error_dir"] = str(base / "error")
-        config["log_dir"] = str(base / "logs")
-
     # IMAGE_STORAGE_DIR sets just the two paths that actually belong
     # together on the image storage server (done_jp2_dir is herbarium-
-    # platform's own IMAGE_DATA_PATH tree; done_jp2_lossless_dir is a
-    # separate top-level folder there for the archival copy). Takes
-    # precedence over DATA_DIR; the individual *_DIR env vars below still
-    # take precedence over this, for a one-off override.
+    # platform's own IMAGE_DATA_PATH tree, named Delivery there too;
+    # done_jp2_lossless_dir is a separate top-level folder there for the
+    # archival copy). The individual *_DIR env vars below still take
+    # precedence over this, for a one-off override.
     image_storage_dir = os.getenv("IMAGE_STORAGE_DIR")
     if image_storage_dir:
         base = Path(image_storage_dir)
-        config["done_jp2_dir"] = str(base / "jp2")
-        config["done_jp2_lossless_dir"] = str(base / "jp2_lossless")
+        config["done_jp2_dir"] = str(base / "Delivery")
+        config["done_jp2_lossless_dir"] = str(base / "archive")
 
     # LOCAL_STATE_DIR sets the three paths that belong together on whatever
     # machine ingest.py itself runs on (TIFF is temporary, not the
@@ -99,6 +87,22 @@ def load_config(config_path: Path = Path("config.yml")) -> dict:
         if os.getenv(env_var):
             config[key] = os.getenv(env_var)
     return config
+
+
+_FILENAME_TIMESTAMP_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})")
+
+
+def capture_time_of(tiff_path: Path) -> datetime:
+    """When BookEye actually wrote this file — prefer the timestamp
+    embedded in its own filename (e.g. "..._2026-09-21_11-11-18.tif") over
+    file mtime, since mtime doesn't survive every copy/backup/sync, but a
+    filename does. Falls back to mtime if the filename doesn't have this
+    pattern (not guaranteed for every BookEye naming/Job Mode setting)."""
+    m = _FILENAME_TIMESTAMP_RE.search(tiff_path.stem)
+    if m:
+        year, month, day, hour, minute, second = map(int, m.groups())
+        return datetime(year, month, day, hour, minute, second)
+    return datetime.fromtimestamp(tiff_path.stat().st_mtime)
 
 
 def dated_path(base_dir: Path, capture_time: datetime, filename: str) -> Path:
@@ -222,7 +226,15 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
         tiff_path.rename(named_tiff)
         shutil.move(str(jp2_path), final_jp2_path)
         shutil.move(str(lossless_path), final_lossless_path)
-        shutil.move(str(named_tiff), dated_path(dirs["done_tif"], capture_time, named_tiff.name))
+        # Only discard the TIFF once both JP2s are safely in their final
+        # place — never delete it as a side effect of a failed/partial
+        # conversion. Kept by default (tiff.keep in config.yml); the
+        # lossless JP2 is pixel-identical to it, so once that's confirmed
+        # written, the TIFF is redundant to actually delete.
+        if config.get("tiff", {}).get("keep", True):
+            shutil.move(str(named_tiff), dated_path(dirs["done_tif"], capture_time, named_tiff.name))
+        else:
+            named_tiff.unlink()
         print(f"  Done: {accession_id}")
         return True
 
@@ -237,11 +249,11 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
 def process_file(tiff_path: Path, dirs: dict[str, Path], state: FolderState,
                  log_path: Path, csv_path: Path, config: dict) -> bool:
     print(f"Processing: {tiff_path.name}")
-    # Capture time = the TIFF's own file time, i.e. when BookEye actually
-    # wrote it — not when ingest happens to process it later. Read this
-    # before any renaming, and reuse it as the CSV's Creation Time (matching
-    # what that column means in Picturae's own data).
-    capture_time = datetime.fromtimestamp(tiff_path.stat().st_mtime)
+    # Capture time = when BookEye actually wrote this file, not when ingest
+    # happens to process it later — see capture_time_of(). Read this before
+    # any renaming, and reuse it as the CSV's Creation Time (matching what
+    # that column means in Picturae's own data).
+    capture_time = capture_time_of(tiff_path)
 
     try:
         code, barcodes = decode_codes(tiff_path)
@@ -272,10 +284,11 @@ def main() -> None:
     state = FolderState(dirs["logs"] / "current_folder_state.txt")
 
     tiffs = list(dirs["inbox"].glob("*.tif")) + list(dirs["inbox"].glob("*.tiff"))
-    # Sort by capture (modification) time, not filename — BookEye's default
-    # filenames start with a per-job counter that resets each session, so
-    # filename order does not reliably reflect scan order across sessions.
-    tiffs.sort(key=lambda p: p.stat().st_mtime)
+    # Sort by capture time (see capture_time_of()), not filename — BookEye's
+    # default filenames start with a per-job counter that resets each
+    # session, so filename order does not reliably reflect scan order
+    # across sessions.
+    tiffs.sort(key=capture_time_of)
 
     if not tiffs:
         print("No TIFF files found in inbox.")

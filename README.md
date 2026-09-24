@@ -81,17 +81,18 @@ git-ignored secrets/paths:
 - **`.env`** (git-ignored — copy from `.env.template`) — server-specific
   paths that override `config.yml`'s relative defaults, plus FileMaker Data
   API credentials (`FM_BASE_URL`/`FM_DATABASE`/`FM_LAYOUT`/`FM_USER`/
-  `FM_PASSWORD`). In production, three things have their own home rather
-  than six independent paths to track: `INBOX_DIR` (where BookEye's SMB
-  share lands), `IMAGE_STORAGE_DIR` (gives `jp2/` — herbarium-platform's
-  own `IMAGE_DATA_PATH` tree — and `jp2_lossless/`, archival only, never
-  read by RAIS/IIIF), and `LOCAL_STATE_DIR` (gives `tif/`/`error/`/`logs/`,
-  local to wherever `ingest.py` runs — TIFF is temporary, not the archive).
-  Any of the six individual `DONE_JP2_DIR`/`DONE_JP2_LOSSLESS_DIR`/
+  `FM_PASSWORD`). Three grouped path variables cover production:
+  `INBOX_DIR` (where BookEye's SMB share lands), `IMAGE_STORAGE_DIR`
+  (gives `Delivery/` — herbarium-platform's own `IMAGE_DATA_PATH` tree,
+  named the same there — and `archive/`; only finished JP2s ever go here,
+  and `archive/` is never read by RAIS/IIIF), and `LOCAL_STATE_DIR` (gives
+  `tif/`/`error/`/`logs/`). Set `LOCAL_STATE_DIR` explicitly, off both the
+  image catalogue and the code checkout — leaving it unset falls back to
+  `config.yml`'s relative defaults, which resolve those three *inside*
+  wherever `ingest.py` is run from, mixing operational state into the code
+  directory. Any of the six individual `DONE_JP2_DIR`/`DONE_JP2_LOSSLESS_DIR`/
   `DONE_TIF_DIR`/`ERROR_DIR`/`LOG_DIR` vars still overrides its grouped
-  parent for a one-off redirect. `DATA_DIR` is a local dev/testing-only
-  shortcut that points everything at one shared folder instead (lowest
-  precedence of all of these).
+  parent for a one-off redirect.
 
 ## Scripts
 
@@ -107,7 +108,7 @@ Standalone dev/test tools, separate from the `ingest.py` entrypoint:
   Postgres → FileMaker sync.
 - `scripts/reset_local_test_output.py` — clears `done/`, `error/`, and
   `logs/` for a clean local re-run of `ingest.py`. Always targets these
-  repo-relative directories, ignoring `.env`/`DATA_DIR`.
+  repo-relative directories, ignoring `.env`.
 
 ## Output layout
 

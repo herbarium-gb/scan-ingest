@@ -42,3 +42,8 @@ validation_lossless:
   min_height_px: 6000
   min_file_size_mb: 20
   max_file_size_mb: 250
+
+tiff:
+  keep: true # A sheet's TIFF is moved to done_tif_dir when true; deleted
+             # once its lossless JP2 is validated when false. Folder-ID
+             # labels always discard their TIFF regardless of this flag.
