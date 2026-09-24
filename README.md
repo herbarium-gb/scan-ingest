@@ -57,6 +57,7 @@ days' scans.
 | Register | `steps/register.py` | Appends a row to the daily TSV batch log and to a FileMaker-import CSV (Picturae's own column header, most taxonomy columns left blank). Only the lossy view's path is recorded — the lossless copy isn't part of that schema. |
 | Track folder | `steps/state.py` | Persists the "current folder" ID across runs (`logs/current_folder_state.txt`), since a folder's label and its last sheets can land in different nightly runs. |
 | File away | `ingest.py` | Moves the lossy JP2 to `done/jp2/` (sheets and Folder-ID labels together, matching Picturae's own flat delivery layout). A sheet's TIFF goes to `done/tif/` and its lossless JP2 to `done/jp2_lossless/`; a Folder-ID label's TIFF is deleted instead — no lossless copy exists to make keeping it worthwhile. Anything that raises along the way goes to `error/` instead. |
+| Update shards | `ingest.py` | Best-effort, after the run: calls herbarium-platform's `build_shards.py` for each date touched, so new images become viewable without a manual step. Skipped if `HERBARIUM_PLATFORM_DIR` isn't set; a failure is logged (`logs/shard_warnings_<date>.log`) but never fails the ingest run — a missed update is safe to redo by hand later. |
 
 A sheet's QR always identifies the sheet/image; a barcode (0 or more per
 sheet) identifies one "kollekt" (field-collection event) mounted on it — see
@@ -93,6 +94,9 @@ git-ignored secrets/paths:
   directory. Any of the six individual `DONE_JP2_DIR`/`DONE_JP2_LOSSLESS_DIR`/
   `DONE_TIF_DIR`/`ERROR_DIR`/`LOG_DIR` vars still overrides its grouped
   parent for a one-off redirect.
+- `HERBARIUM_PLATFORM_DIR`/`SHARD_TARGET` — optional; point at a
+  herbarium-platform checkout to have `ingest.py` trigger a shard update
+  after each run. Unset skips the step entirely.
 
 ## Scripts
 
@@ -123,4 +127,5 @@ logs/
   ingest_<date>.tsv              per-run batch log
   filemaker_import_<date>.csv    new rows for FileMaker import
   current_folder_state.txt       persisted current-folder ID
+  shard_warnings_<date>.log      failed shard updates, if any (safe to rerun by hand)
 ```

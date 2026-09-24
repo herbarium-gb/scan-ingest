@@ -31,6 +31,7 @@ this Folder-ID grouping.
 import os
 import re
 import shutil
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -297,9 +298,12 @@ def main() -> None:
     print(f"Found {len(tiffs)} file(s) to process. "
           f"Starting folder: {state.current_folder_id}\n")
     ok = fail = 0
+    processed_dates = set()
     for tiff in tiffs:
+        capture_date = capture_time_of(tiff).date()
         if process_file(tiff, dirs, state, log_path, csv_path, config):
             ok += 1
+            processed_dates.add(capture_date)
         else:
             fail += 1
 
@@ -307,6 +311,53 @@ def main() -> None:
           f"Ending folder: {state.current_folder_id}")
     if fail:
         print(f"Failed files moved to: {dirs['error']}")
+
+    if processed_dates:
+        trigger_shard_build(processed_dates, dirs["done_jp2"], dirs["logs"], date_str)
+
+
+def trigger_shard_build(dates: set, image_root: Path, log_dir: Path,
+                        date_str: str) -> None:
+    """Best-effort: ask herbarium-platform to update its shards for each
+    date touched this run, so newly-filed images become viewable without
+    a manual step. Never fails the ingest run itself over this — a missed
+    update is safe to redo later by rerunning build_shards.py by hand.
+    Skipped entirely if HERBARIUM_PLATFORM_DIR isn't configured.
+
+    IMAGE_DATA_PATH is passed explicitly as our own done_jp2_dir, so
+    build_shards.py indexes exactly the tree we just wrote to, whatever
+    herbarium-platform's own .env says (python-dotenv never overrides a
+    variable already set in the environment).
+    """
+    platform_dir = os.getenv("HERBARIUM_PLATFORM_DIR")
+    if not platform_dir:
+        print("\nHERBARIUM_PLATFORM_DIR not set — skipping shard update.")
+        return
+
+    target = os.getenv("SHARD_TARGET", "prod")
+    script = Path(platform_dir) / "viewer" / "scripts" / "build_shards.py"
+    warn_log = log_dir / f"shard_warnings_{date_str}.log"
+
+    env = {**os.environ, "IMAGE_DATA_PATH": str(image_root.resolve())}
+
+    print(f"\nUpdating shards ({target}) for {len(dates)} date(s)...")
+    for d in sorted(dates):
+        subpath = f"{d:%Y}/{d:%m}/{d:%d}"
+        try:
+            result = subprocess.run(
+                [sys.executable, str(script), target, subpath],
+                cwd=platform_dir, env=env, capture_output=True, text=True,
+            )
+            error = result.stderr.strip() if result.returncode else None
+        except OSError as e:  # e.g. HERBARIUM_PLATFORM_DIR doesn't exist
+            error = str(e)
+        if error is None:
+            print(f"  {subpath}: OK")
+        else:
+            msg = f"Shard build failed for {subpath} ({target}): {error}"
+            print(f"  WARNING: {msg}", file=sys.stderr)
+            with open(warn_log, "a", encoding="utf-8") as f:
+                f.write(f"{datetime.now().isoformat(timespec='seconds')}\t{msg}\n")
 
 
 if __name__ == "__main__":
