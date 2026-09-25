@@ -4,8 +4,8 @@ ingest.py's FileMaker step can be re-tested from a known state (record
 missing -> created, record present -> left alone).
 
 Refuses to run unless FM_DATABASE ends in "_test" — this is never meant
-for the production database, and the production Scan-importer privilege
-set has no Delete permission anyway. Lists what it found and asks for
+for the production database, and the ingest account has no Delete
+permission there anyway. Lists what it found and asks for
 confirmation before deleting anything.
 
 Uses the same FM_* variables as ingest.py (see .env.template).

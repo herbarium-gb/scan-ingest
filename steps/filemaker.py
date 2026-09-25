@@ -1,9 +1,9 @@
 """Create a skeleton registration record in FileMaker via the Data API.
 
-For each sheet, ingest.py creates one record in Herbariet_databas's
-LD_huvudregister table holding only AccessionNo ("GB-0577660") and Löpnr
-(the same number without the "GB-" prefix and leading zeros, 577660) —
-the two fields FileMaker requires, and the only two the Scan-importer
+For each sheet, ingest.py creates one record in the FileMaker registration
+database's LD_huvudregister table holding only AccessionNo ("GB-0577660")
+and Löpnr (the same number without the "GB-" prefix and leading zeros,
+577660) — the two fields FileMaker requires, and the only two the ingest
 account may write. Everything else on the record (locality, collector,
 determination, ...) is transcribed by staff later, from the image.
 

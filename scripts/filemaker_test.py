@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""One-off test: verify the Scan-importer account can create/read/delete a
-record in Herbariet_databas_test via the FileMaker Data API.
+"""One-off test: verify the ingest account can create/read/delete a
+record in the FileMaker test database via the Data API.
 
 Creates one record with a clearly-marked test value in AccessionNo, reads it
 back to confirm the round-trip, then deletes it and logs out — leaves nothing
@@ -12,14 +12,14 @@ credentials here, never put real values in this file or commit a filled-in
 .env:
 
   FM_BASE_URL   e.g. https://filemaker.example.org  (no trailing slash)
-  FM_DATABASE   e.g. Herbariet_databas_test
-  FM_LAYOUT     e.g. Scan_import
-  FM_USER       e.g. Scan-importer
+  FM_DATABASE   the test database (name ending in _test)
+  FM_LAYOUT     layout the account can write through
+  FM_USER       the ingest account
   FM_PASSWORD
 
 Run:
-  FM_BASE_URL=https://... FM_DATABASE=Herbariet_databas_test \
-  FM_LAYOUT=Scan_import FM_USER=Scan-importer FM_PASSWORD=... \
+  FM_BASE_URL=https://... FM_DATABASE=... \
+  FM_LAYOUT=... FM_USER=... FM_PASSWORD=... \
   python scripts/filemaker_test.py
 
 Needs `requests` (not yet in environment.yml — `pip install requests` first,
@@ -120,7 +120,7 @@ def main() -> None:
         fm_check(r)
         print("  OK, deleted. No test data left behind.")
 
-        print("\nSUCCESS: Scan-importer can create, read, and delete via the Data API.")
+        print(f"\nSUCCESS: {user} can create, read, and delete via the Data API.")
 
     except Exception:
         print(f"\nFAILED — if a record was created (see recordId above, if any),"
