@@ -13,8 +13,8 @@ and classified as either:
     FileMaker-import CSV), move to done/.
 
 Both kinds get a row in a FileMaker-import CSV that reuses Picturae's own
-column names (see steps/register.py) — most columns stay blank for now;
-species gets joined onto Folder QR later, by an expert.
+column names (see steps/register.py) — most columns stay blank; taxonomy
+is transcribed from the scanned folder during registration.
 
 Files are processed in scan (capture) order, not filename order — BookEye's
 default filenames start with a per-job counter that resets each session, so

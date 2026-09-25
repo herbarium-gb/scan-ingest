@@ -15,8 +15,10 @@ BookEye  ──►  scan-ingest  ──►  JP2 archive  ──►  IIIF viewer
 
 A **Folder-ID label** (`GB-Folder_<digits>`) is scanned first in each
 physical folder's batch; every **sheet** (`GB-<digits>`) scanned after it
-belongs to that folder until the next label. Taxonomy is never set here —
-it's joined on the folder ID in FileMaker later.
+belongs to that folder until the next label. Only the folder ID is
+recorded; the species is transcribed from the scanned folder during
+registration. The FileMaker record links to both the sheet and folder
+images in the IIIF viewer (herbarium-platform).
 
 The image server and viewer are managed separately in
 **[herbarium-platform](https://github.com/herbarium-gb/herbarium-platform)**,
