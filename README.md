@@ -1,12 +1,14 @@
 # scan-ingest
 
 Ingest pipeline for herbarium sheets scanned in-house on a BookEye 4 at the
-Gothenburg herbarium (GB). Each scanned TIFF is classified by its QR code,
-converted to two JP2s (a lossy view + a lossless archival copy), and
-registered for FileMaker import.
+Gothenburg herbarium (GB). Each scanned TIFF is classified by its QR code
+and converted to two JP2s: a lossy view, made viewable in the IIIF viewer,
+and a lossless archival copy. Each sheet also gets an empty record in
+FileMaker, ready for staff to register (transcribe) the label from the
+image — registration itself stays manual.
 
 ```
-BookEye TIFF ──► classify QR ──► convert to JP2 x2 ──► validate ──► register ──► file away
+BookEye TIFF ──► classify QR ──► convert to JP2 x2 ──► validate ──► log ───────► file away
  (upload/)        (Folder or        (lossy view +         (size/res)   (TSV log +   (done/)
                     Sheet)          lossless archive)                  FileMaker CSV)
 ```
@@ -55,7 +57,7 @@ days' scans.
 | Check not already archived | `steps/iiif_index.py` | Before any conversion: if a scan of this ID is already archived — i.e. in the IIIF viewer's shard index under a different date folder (e.g. a rescan of a sheet Picturae delivered), or a file with that name already exists in the destination, nothing is written — the TIFF goes to `error/`. For a Folder-ID label the folder is still set as current, so the sheets after it are tagged correctly. The index check needs `HERBARIUM_PLATFORM_DIR`; without it only existing files are protected. |
 | Convert | `steps/convert.py` | TIFF → JP2 via `opj_compress`. Sheets get two encodes: a lossy view (`rate`-targeted, irreversible 9/7 wavelet) and a lossless archival copy (`lossless=True` — no `-r`/`-I`, reversible 5/3 wavelet, pixel-identical to the source). Folder-ID labels get the lossy view only — a folder cover is an administrative label, not the specimen being preserved, and its kraft-paper grain compresses disproportionately poorly (larger files for less archival value than a sheet's lossless copy). |
 | Validate | `steps/validate.py` | Rejects a JP2 below the configured minimum resolution/file size, or above the maximum — separate thresholds for the lossy view (`validation`) and the much larger lossless copy (`validation_lossless`). |
-| Register | `steps/register.py` | Appends a row to the daily TSV batch log and to a FileMaker-import CSV (Picturae's own column header, most taxonomy columns left blank). Only the lossy view's path is recorded — the lossless copy isn't part of that schema. |
+| Log | `steps/register.py` | Appends a row to the daily TSV batch log and to a FileMaker-import CSV (Picturae's own column header, most taxonomy columns left blank). Only the lossy view's path is recorded — the lossless copy isn't part of that schema. |
 | Track folder | `steps/state.py` | Persists the "current folder" ID across runs (`logs/current_folder_state.txt`), since a folder's label and its last sheets can land in different nightly runs. |
 | File away | `ingest.py` | Moves the lossy JP2 to `done/jp2/` (sheets and Folder-ID labels together, matching Picturae's own flat delivery layout). A sheet's lossless JP2 goes to `done/jp2_lossless/`, and its TIFF is deleted once that copy validates (pixel-identical, so nothing is lost) — or moved to `done/tif/` instead if `tiff.keep` is `true` in `config.yml`. A Folder-ID label's TIFF is always deleted — no lossless copy exists to make keeping it worthwhile. Anything that raises along the way goes to `error/` instead, with the reason in `logs/errors_<date>.log`. |
 | Create FileMaker record | `steps/filemaker.py` | Best-effort, once all files are processed: creates a skeleton record in the FileMaker registration database via the Data API for each sheet filed away — only `AccessionNo`, `Löpnr`, `Image1` (the image ID) and `FolderQR` (the sheet's Folder-ID, blank if unknown); the rest is transcribed by staff later. Created in ascending Löpnr order (not scan order), since FileMaker shows unsorted records in creation order. A record that already exists for that AccessionNo is left alone. Skipped if `FM_BASE_URL` isn't set; a failure is logged (`logs/filemaker_warnings_<date>.log`) but never fails the sheet. Folder-ID labels get no record. |
