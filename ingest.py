@@ -41,6 +41,7 @@ from dotenv import load_dotenv
 
 from steps.convert import tiff_to_jp2
 from steps.filemaker import FileMakerClient, FileMakerError, CREATED
+from steps.iiif_index import idx_dir, published_dir
 from steps.qr_read import decode_codes, classify_code, FOLDER, SHEET
 from steps.register import register_sheet, register_folder_marker
 from steps.state import FolderState, UNASSIGNED
@@ -133,7 +134,8 @@ def setup_dirs(config: dict) -> dict[str, Path]:
 
 def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path],
                           state: FolderState, log_path: Path, csv_path: Path,
-                          capture_time: datetime, config: dict, barcodes: list[str]) -> bool:
+                          capture_time: datetime, config: dict, barcodes: list[str],
+                          error_log: Path) -> bool:
     """Handle a Folder-ID label image: convert to JP2, file away, update state.
 
     Folder markers go through the same convert+validate steps as sheets —
@@ -176,7 +178,7 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
               f"(subsequent sheets will be tagged with this folder)")
         return True
     except Exception as e:
-        print(f"  ERROR: {e}", file=sys.stderr)
+        log_error(error_log, tiff_path.name, str(e))
         for leftover in (tiff_path, named_tiff, jp2_path):
             if leftover.exists():
                 shutil.move(str(leftover), dirs["error"] / leftover.name)
@@ -185,7 +187,8 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
 
 def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
                   state: FolderState, log_path: Path, csv_path: Path,
-                  capture_time: datetime, config: dict, barcodes: list[str]) -> bool:
+                  capture_time: datetime, config: dict, barcodes: list[str],
+                  error_log: Path) -> bool:
     """Handle an ordinary specimen sheet: convert, validate, register, file away.
 
     Produces two JP2s: a lossy view (done_jp2_dir, the IIIF-served copy) and a
@@ -241,16 +244,51 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
         return True
 
     except Exception as e:
-        print(f"  ERROR: {e}", file=sys.stderr)
+        log_error(error_log, tiff_path.name, str(e))
         for leftover in (jp2_path, lossless_path, tiff_path, tiff_path.with_name(f"{accession_id}.tiff")):
             if leftover.exists():
                 shutil.move(str(leftover), dirs["error"] / leftover.name)
         return False
 
 
+def log_error(error_log: Path, filename: str, msg: str) -> None:
+    """Print a file's failure reason and keep it in error_log — the file
+    itself just lands in error/, which doesn't say why."""
+    print(f"  ERROR: {msg}", file=sys.stderr)
+    with open(error_log, "a", encoding="utf-8") as f:
+        f.write(f"{datetime.now().isoformat(timespec='seconds')}\t{filename}\t{msg}\n")
+
+
+def publish_conflict(image_id: str, kind: str, dirs: dict[str, Path],
+                     capture_time: datetime) -> str | None:
+    """Why filing this image would replace something already there, or
+    None if it's safe. Checked before any conversion work.
+
+    Two cases: the ID is already published in the IIIF viewer under a
+    different date folder (e.g. a rescan of a sheet Picturae delivered —
+    see steps/iiif_index.py), or a file with this name already sits in
+    the destination folder. Either way nothing is overwritten; the TIFF
+    goes to error/ for a person to decide about."""
+    rel_dir = f"{capture_time:%Y}/{capture_time:%m}/{capture_time:%d}"
+    try:
+        existing = published_dir(image_id)
+    except (OSError, ValueError) as e:  # unreadable/corrupt shard file
+        return f"could not check the IIIF index for {image_id}: {e}"
+    if existing is not None and existing != rel_dir:
+        return f"A scan of {image_id} is already archived (under {existing}) — not replacing it"
+
+    targets = [dirs["done_jp2"] / rel_dir / f"{image_id}.jp2"]
+    if kind == SHEET:
+        targets.append(dirs["done_jp2_lossless"] / rel_dir / f"{image_id}.jp2")
+    for t in targets:
+        if t.exists():
+            return f"{t} already exists — not overwriting it"
+    return None
+
+
 def process_file(tiff_path: Path, dirs: dict[str, Path], state: FolderState,
                  log_path: Path, csv_path: Path, config: dict,
-                 filed_sheets: list[tuple[str, str]]) -> bool:
+                 filed_sheets: list[tuple[str, str]], error_log: Path) -> bool:
     print(f"Processing: {tiff_path.name}")
     # Capture time = when BookEye actually wrote this file, not when ingest
     # happens to process it later — see capture_time_of(). Read this before
@@ -262,7 +300,18 @@ def process_file(tiff_path: Path, dirs: dict[str, Path], state: FolderState,
         code, barcodes = decode_codes(tiff_path)
         kind = classify_code(code)
     except ValueError as e:
-        print(f"  ERROR: {e}", file=sys.stderr)
+        log_error(error_log, tiff_path.name, str(e))
+        shutil.move(str(tiff_path), dirs["error"] / tiff_path.name)
+        return False
+
+    conflict = publish_conflict(code, kind, dirs, capture_time)
+    if conflict:
+        if kind == FOLDER:
+            # The label still says which folder the following sheets
+            # belong to — only its image isn't published again.
+            state.set_current_folder(code)
+            conflict += f"; {code} set as current folder anyway"
+        log_error(error_log, tiff_path.name, conflict)
         shutil.move(str(tiff_path), dirs["error"] / tiff_path.name)
         return False
 
@@ -271,11 +320,12 @@ def process_file(tiff_path: Path, dirs: dict[str, Path], state: FolderState,
 
     if kind == FOLDER:
         return process_folder_marker(tiff_path, code, dirs, state, log_path,
-                                      csv_path, capture_time, config, barcodes)
+                                      csv_path, capture_time, config, barcodes,
+                                      error_log)
     else:
         assert kind == SHEET
         ok = process_sheet(tiff_path, code, dirs, state, log_path, csv_path,
-                           capture_time, config, barcodes)
+                           capture_time, config, barcodes, error_log)
         if ok:
             filed_sheets.append((code, state.current_folder_id))
         return ok
@@ -338,6 +388,10 @@ def main() -> None:
     if fm is None:
         print("FM_BASE_URL not set — skipping FileMaker records.")
     fm_warn_log = dirs["logs"] / f"filemaker_warnings_{date_str}.log"
+    error_log = dirs["logs"] / f"errors_{date_str}.log"
+    if idx_dir() is None:
+        print("HERBARIUM_PLATFORM_DIR not set — can't check for images already "
+              "published in IIIF; only existing files are protected.")
 
     print(f"Found {len(tiffs)} file(s) to process. "
           f"Starting folder: {state.current_folder_id}\n")
@@ -348,7 +402,7 @@ def main() -> None:
         for tiff in tiffs:
             capture_date = capture_time_of(tiff).date()
             if process_file(tiff, dirs, state, log_path, csv_path, config,
-                            filed_sheets):
+                            filed_sheets, error_log):
                 ok += 1
                 processed_dates.add(capture_date)
             else:
@@ -364,7 +418,7 @@ def main() -> None:
     print(f"\nDone. {ok} succeeded, {fail} failed. "
           f"Ending folder: {state.current_folder_id}")
     if fail:
-        print(f"Failed files moved to: {dirs['error']}")
+        print(f"Failed files moved to: {dirs['error']} (reasons in {error_log.name})")
 
     if processed_dates:
         trigger_shard_build(processed_dates, dirs["done_jp2"], dirs["logs"], date_str)
