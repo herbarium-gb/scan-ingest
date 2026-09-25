@@ -14,6 +14,8 @@ import json
 import os
 from pathlib import Path
 
+from steps.paths import repo_path
+
 
 def shard_key_for(image_id: str) -> str:
     """Must match shard_key_for() in herbarium-platform's
@@ -29,7 +31,7 @@ def idx_dir() -> Path | None:
     if not platform_dir:
         return None
     target = os.getenv("SHARD_TARGET", "prod")
-    return Path(platform_dir) / "viewer" / target / "idx"
+    return repo_path(platform_dir) / "viewer" / target / "idx"
 
 
 def published_dir(image_id: str) -> str | None:

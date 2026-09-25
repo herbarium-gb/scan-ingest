@@ -23,6 +23,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 from ingest import load_config  # noqa: E402  (also loads .env)
+from steps.paths import repo_path  # noqa: E402
 
 MARKER = ".test-sandbox"
 DIR_KEYS = ["inbox_dir", "done_jp2_dir", "done_jp2_lossless_dir",
@@ -35,7 +36,7 @@ def in_sandbox(d: Path) -> bool:
 
 def main() -> None:
     config = load_config(REPO_ROOT / "config.yml")
-    dirs = {k: (REPO_ROOT / config[k]).resolve() for k in DIR_KEYS}
+    dirs = {k: Path(config[k]) for k in DIR_KEYS}  # already absolute
 
     outside = [k for k, d in dirs.items() if not in_sandbox(d)]
     if outside:
@@ -57,7 +58,7 @@ def main() -> None:
     if not source:
         print("TEST_TIFF_DIR not set — inbox left empty.")
         return
-    tiffs = sorted(p for p in Path(source).iterdir()
+    tiffs = sorted(p for p in repo_path(source).iterdir()
                    if p.suffix.lower() in (".tif", ".tiff"))
     dirs["inbox_dir"].mkdir(parents=True, exist_ok=True)
     for p in tiffs:

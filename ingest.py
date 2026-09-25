@@ -42,15 +42,16 @@ from dotenv import load_dotenv
 from steps.convert import tiff_to_jp2
 from steps.filemaker import FileMakerClient, FileMakerError, CREATED
 from steps.iiif_index import idx_dir, published_dir
+from steps.paths import REPO_ROOT, repo_path
 from steps.qr_read import decode_codes, classify_code, FOLDER, SHEET
 from steps.register import register_sheet, register_folder_marker
 from steps.state import FolderState, UNASSIGNED
 from steps.validate import validate_jp2
 
-load_dotenv()
+load_dotenv(REPO_ROOT / ".env")
 
 
-def load_config(config_path: Path = Path("config.yml")) -> dict:
+def load_config(config_path: Path = REPO_ROOT / "config.yml") -> dict:
     with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
@@ -89,6 +90,8 @@ def load_config(config_path: Path = Path("config.yml")) -> dict:
     for key, env_var in env_overrides.items():
         if os.getenv(env_var):
             config[key] = os.getenv(env_var)
+    for key in env_overrides:
+        config[key] = str(repo_path(config[key]))
     return config
 
 
@@ -442,8 +445,9 @@ def trigger_shard_build(dates: set, image_root: Path, log_dir: Path,
         print("\nHERBARIUM_PLATFORM_DIR not set — skipping shard update.")
         return
 
+    platform_dir = repo_path(platform_dir)
     target = os.getenv("SHARD_TARGET", "prod")
-    script = Path(platform_dir) / "viewer" / "scripts" / "build_shards.py"
+    script = platform_dir / "viewer" / "scripts" / "build_shards.py"
     warn_log = log_dir / f"shard_warnings_{date_str}.log"
 
     env = {**os.environ, "IMAGE_DATA_PATH": str(image_root.resolve())}
