@@ -1,146 +1,87 @@
 # scan-ingest
 
 Ingest pipeline for herbarium sheets scanned in-house on a BookEye 4 at the
-Gothenburg herbarium (GB). Each scanned TIFF is classified by its QR code
-and converted to two JP2s: a lossy view, made viewable in the IIIF viewer,
-and a lossless archival copy. Each sheet also gets an empty record in
-FileMaker, ready for staff to register (transcribe) the label from the
-image — registration itself stays manual.
+Gothenburg herbarium (GB). Each scan is identified by its QR code,
+converted to JP2, made viewable in the IIIF viewer, and given an empty
+record in FileMaker, ready for staff to register (transcribe) the label
+from the image.
 
 ```
-BookEye TIFF ──► classify QR ──► convert to JP2 x2 ──► validate ──► log ───────► file away
- (upload/)        (Folder or        (lossy view +         (size/res)   (TSV log +   (done/)
-                    Sheet)          lossless archive)                  FileMaker CSV)
+BookEye  ──►  scan-ingest  ──►  JP2 archive  ──►  IIIF viewer
+ (TIFF)       (QR, convert,  │   (lossy view +     (shard index)
+               validate)     │    lossless copy)
+                             └──►  FileMaker  (empty record per sheet)
 ```
 
-A **Folder-ID label** (`GB-Folder_<digits>`) is the first image scanned in a
-physical folder's batch — it goes through the same convert-to-JP2 step as a
-sheet. Every **specimen sheet** (`GB-<digits>`) scanned after it inherits
-that folder ID, by capture
-order, until the next label appears. Species/taxonomy is never written here —
-only the folder ID; an expert joins taxonomy in FileMaker later, keyed on
-Folder QR.
+A **Folder-ID label** (`GB-Folder_<digits>`) is scanned first in each
+physical folder's batch; every **sheet** (`GB-<digits>`) scanned after it
+belongs to that folder until the next label. Taxonomy is never set here —
+it's joined on the folder ID in FileMaker later.
 
-The image server, IIIF viewer, and web platform are managed separately in
-**herbarium-platform**. The Postgres/GBIF publication pipeline is managed
-separately in **herbarium-data**.
+The image server and viewer are managed separately in
+**[herbarium-platform](https://github.com/herbarium-gb/herbarium-platform)**,
+the GBIF publication pipeline in
+**[herbarium-data](https://github.com/herbarium-gb/herbarium-data)**.
 
 ## Quick start
 
-1. Create the conda environment and activate it:
-   ```
-   conda env create -f environment.yml
-   conda activate scan-ingest
-   ```
-2. Copy `.env.template` to `.env` and fill in the server-specific paths (and
-   FileMaker credentials, if using `scripts/filemaker_test.py`).
-3. Drop TIFF files into the inbox directory (`INBOX_DIR`, or `inbox/` for
-   local dev).
-4. Run:
-   ```
-   python ingest.py
-   ```
-
-Successfully processed files move to `done/`; anything that fails moves to
-`error/` with the reason printed to stderr.
+1. Create and activate the environment:
+   `conda env create -f environment.yml && conda activate scan-ingest`
+2. Copy `.env.template` to `.env` and fill it in.
+3. Put TIFFs in the inbox and run `python ingest.py`.
 
 ## Pipeline
 
-`ingest.py` processes every `*.tif`/`*.tiff` in the inbox, in **capture
-(file modification time) order** — not filename order, since BookEye's
-per-job filename counter resets each session and would interleave different
-days' scans.
+`ingest.py` processes the inbox in capture order (the timestamp in
+BookEye's filename). Rationale for each step is in the module docstrings.
 
 | Step | Module | What it does |
 |------|--------|---------------|
-| Read QR | `steps/qr_read.py` | Decodes the QR code (and any barcodes) via pyzbar; classifies the QR as a Folder-ID label or a specimen accession. |
-| Check not already archived | `steps/iiif_index.py` | Before any conversion: if a scan of this ID is already archived — i.e. in the IIIF viewer's shard index under a different date folder (e.g. a rescan of a sheet Picturae delivered), or a file with that name already exists in the destination, nothing is written — the TIFF goes to `error/`. For a Folder-ID label the folder is still set as current, so the sheets after it are tagged correctly. The index check needs `HERBARIUM_PLATFORM_DIR`; without it only existing files are protected. |
-| Convert | `steps/convert.py` | TIFF → JP2 via `opj_compress`. Sheets get two encodes: a lossy view (`rate`-targeted, irreversible 9/7 wavelet) and a lossless archival copy (`lossless=True` — no `-r`/`-I`, reversible 5/3 wavelet, pixel-identical to the source). Folder-ID labels get the lossy view only — a folder cover is an administrative label, not the specimen being preserved, and its kraft-paper grain compresses disproportionately poorly (larger files for less archival value than a sheet's lossless copy). |
-| Validate | `steps/validate.py` | Rejects a JP2 below the configured minimum resolution/file size, or above the maximum — separate thresholds for the lossy view (`validation`) and the much larger lossless copy (`validation_lossless`). |
-| Log | `steps/register.py` | Appends a row to the daily TSV batch log and to a FileMaker-import CSV (Picturae's own column header, most taxonomy columns left blank). Only the lossy view's path is recorded — the lossless copy isn't part of that schema. |
-| Track folder | `steps/state.py` | Persists the "current folder" ID across runs (`logs/current_folder_state.txt`), since a folder's label and its last sheets can land in different nightly runs. |
-| File away | `ingest.py` | Moves the lossy JP2 to `done/jp2/` (sheets and Folder-ID labels together, matching Picturae's own flat delivery layout). A sheet's lossless JP2 goes to `done/jp2_lossless/`, and its TIFF is deleted once that copy validates (pixel-identical, so nothing is lost) — or moved to `done/tif/` instead if `tiff.keep` is `true` in `config.yml`. A Folder-ID label's TIFF is always deleted — no lossless copy exists to make keeping it worthwhile. Anything that raises along the way goes to `error/` instead, with the reason in `logs/errors_<date>.log`. |
-| Create FileMaker record | `steps/filemaker.py` | Best-effort, once all files are processed: creates a skeleton record in the FileMaker registration database via the Data API for each sheet filed away — only `AccessionNo`, `Löpnr`, `Image1` (the image ID) and `FolderQR` (the sheet's Folder-ID, blank if unknown); the rest is transcribed by staff later. Created in ascending Löpnr order (not scan order), since FileMaker shows unsorted records in creation order. A record that already exists for that AccessionNo is left alone. Skipped if `FM_BASE_URL` isn't set; a failure is logged (`logs/filemaker_warnings_<date>.log`) but never fails the sheet. Folder-ID labels get no record. |
-| Update shards | `ingest.py` | Best-effort, after the run: calls herbarium-platform's `build_shards.py` for each date touched, so new images become viewable without a manual step. Skipped if `HERBARIUM_PLATFORM_DIR` isn't set; a failure is logged (`logs/shard_warnings_<date>.log`) but never fails the ingest run — a missed update is safe to redo by hand later. |
+| Read QR | `steps/qr_read.py` | Reads the QR code (and any barcodes); Folder-ID label or sheet? |
+| Check not already archived | `steps/iiif_index.py` | Stops a scan whose ID is already archived, or whose destination file exists. |
+| Convert | `steps/convert.py` | TIFF → lossy JP2, plus a lossless one for sheets. |
+| Validate | `steps/validate.py` | Checks resolution and file size. |
+| Log | `steps/register.py` | Adds a row to the TSV log and the FileMaker-format CSV. |
+| Track folder | `steps/state.py` | Remembers the current folder across runs. |
+| File away | `ingest.py` | Moves the JP2s into date folders, deletes the TIFF (unless `tiff.keep`). |
+| Create FileMaker record | `steps/filemaker.py` | After the run: an empty record per sheet, in Löpnr order; existing records untouched. |
+| Update shards | `ingest.py` | After the run: updates herbarium-platform's shard index so new images show in the viewer. |
 
-A sheet's QR always identifies the sheet/image; a barcode (0 or more per
-sheet) identifies one "kollekt" (field-collection event) mounted on it — see
-the module docstring in `steps/qr_read.py` for the full QR-vs-barcode rule.
+The last two are skipped if not configured, and never fail the run.
 
 ## Requirements
 
-- Python 3.11 (see `environment.yml`: pillow, numpy, pyzbar, python-dotenv,
-  pyyaml, requests)
-- `zbar` and `openjpeg` (provides `opj_compress`/`opj_decompress`) — installed
-  via conda-forge in `environment.yml`
-- `requests` is used by `scripts/filemaker_test.py` only
+Everything, including `zbar` and `openjpeg`, is in `environment.yml`
+(conda-forge).
 
 ## Configuration
 
-Two layers, matching herbarium-data's split between repo-tracked config and
-git-ignored secrets/paths:
-
-- **`config.yml`** (committed) — JP2 encoding parameters (rate, resolutions,
-  block/precinct/tile sizes) and validation thresholds. Encoding settings are
-  matched to Picturae's own Kakadu recipe for this collection.
-- **`.env`** (git-ignored — copy from `.env.template`) — server-specific
-  paths that override `config.yml`'s relative defaults, plus FileMaker Data
-  API credentials (`FM_BASE_URL`/`FM_DATABASE`/`FM_LAYOUT`/`FM_USER`/
-  `FM_PASSWORD`). Three grouped path variables cover production:
-  `INBOX_DIR` (where BookEye's SMB share lands), `IMAGE_STORAGE_DIR`
-  (gives `Delivery/` — herbarium-platform's own `IMAGE_DATA_PATH` tree,
-  named the same there — and `archive/`; only finished JP2s ever go here,
-  and `archive/` is never read by RAIS/IIIF), and `LOCAL_STATE_DIR` (gives
-  `tif/`/`error/`/`logs/`). Set `LOCAL_STATE_DIR` explicitly, off both the
-  image catalogue and the code checkout — leaving it unset falls back to
-  `config.yml`'s relative defaults, which resolve those three *inside*
-  wherever `ingest.py` is run from, mixing operational state into the code
-  directory. Any of the six individual `DONE_JP2_DIR`/`DONE_JP2_LOSSLESS_DIR`/
-  `DONE_TIF_DIR`/`ERROR_DIR`/`LOG_DIR` vars still overrides its grouped
-  parent for a one-off redirect.
-- `FM_BASE_URL`/`FM_DATABASE`/`FM_LAYOUT`/`FM_USER`/`FM_PASSWORD` —
-  optional; FileMaker Data API connection for the skeleton-record step.
-  Unset `FM_BASE_URL` skips the step entirely.
-- `HERBARIUM_PLATFORM_DIR`/`SHARD_TARGET` — optional; point at a
-  herbarium-platform checkout to have `ingest.py` trigger a shard update
-  after each run. Unset skips the step entirely.
+- **`config.yml`** — JP2 encoding and validation settings, and `tiff.keep`.
+- **`.env`** (git-ignored) — paths, herbarium-platform and FileMaker; copy
+  `.env.template`, where each setting is explained.
 
 ## Scripts
 
-Standalone dev/test tools, separate from the `ingest.py` entrypoint:
+- `scripts/reset_local_test_output.py` — empties a local test sandbox
+  (marked by a `.test-sandbox` file) and refills its inbox from `TEST_TIFF_DIR`.
+- `scripts/filemaker_delete_test_records.py GB-… GB-…` — deletes records in
+  the FileMaker test database (`*_test` only).
+- `scripts/filemaker_test.py` — create/read/delete round-trip against the
+  FileMaker Data API.
+- `scripts/compression_quality_test.py TIFF…` — size/PSNR at several JP2
+  rates, for choosing the encoding rate.
 
-- `scripts/compression_quality_test.py` — encodes one or more TIFFs at several
-  JP2 compression rates and reports size/PSNR against the source, to help
-  pick an encoding rate matching Picturae's quality/size. Takes TIFF paths
-  as arguments — no default sample bundled with the repo.
-- `scripts/filemaker_test.py` — one-off round-trip test (create → read →
-  delete) against the FileMaker Data API, verifying the configured
-  account can write to the test database. Seed of a future
-  Postgres → FileMaker sync.
-- `scripts/filemaker_delete_test_records.py GB-… GB-…` — deletes the records
-  with these AccessionNos, to re-test `ingest.py`'s FileMaker step from a
-  known state. Refuses unless `FM_DATABASE` ends in `_test`; asks before
-  deleting.
-- `scripts/reset_local_test_output.py` — empties every directory
-  `ingest.py` writes to (plus inbox TIFFs and the current-folder state) for
-  a clean local re-run, then refills the inbox from `TEST_TIFF_DIR` if set.
-  Uses the same `.env` paths as `ingest.py`, but refuses to run unless they
-  all lie inside a directory containing a `.test-sandbox` marker file.
-
-## Output layout
+## Outputs
 
 ```
-done/
-  jp2/           lossy view JP2s (sheets + Folder-ID labels), renamed to accession/folder ID
-  jp2_lossless/  lossless archival JP2s, sheets only — pixel-identical to the source TIFF
-  tif/           TIFFs, sheets only, renamed to accession ID (.tiff) — only if
-                 tiff.keep is true (default false); Folder-ID labels never
-error/  anything that failed a step, left under its original/partial name
+Delivery/<YYYY/MM/DD>/   lossy JP2s, served by IIIF   (default: done/jp2/)
+archive/<YYYY/MM/DD>/    lossless JP2s, sheets only   (default: done/jp2_lossless/)
+error/                   files that failed a step
 logs/
-  ingest_<date>.tsv              per-run batch log
-  filemaker_import_<date>.csv    new rows for FileMaker import
-  current_folder_state.txt       persisted current-folder ID
-  errors_<date>.log              why each file in error/ ended up there
-  filemaker_warnings_<date>.log  sheets whose FileMaker record wasn't created, if any
-  shard_warnings_<date>.log      failed shard updates, if any (safe to rerun by hand)
+  errors_<date>.log              why each file is in error/
+  ingest_<date>.tsv              per-run log
+  filemaker_import_<date>.csv    Picturae-format rows
+  filemaker_warnings_<date>.log  FileMaker records not created
+  shard_warnings_<date>.log      failed shard updates
+  current_folder_state.txt       current folder ID
 ```
