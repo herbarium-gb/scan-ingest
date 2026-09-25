@@ -1,11 +1,17 @@
 """Create a skeleton registration record in FileMaker via the Data API.
 
 For each sheet, ingest.py creates one record in the FileMaker registration
-database's LD_huvudregister table holding only AccessionNo ("GB-0577660")
-and Löpnr (the same number without the "GB-" prefix and leading zeros,
-577660) — the two fields FileMaker requires, and the only two the ingest
-account may write. Everything else on the record (locality, collector,
-determination, ...) is transcribed by staff later, from the image.
+database's LD_huvudregister table holding only:
+
+  AccessionNo  "GB-0577660"
+  Löpnr        577660 (AccessionNo without "GB-" and leading zeros)
+  Image1       "GB-0577660" (the image ID, for the form's view-image button)
+  FolderQR     "GB-Folder_0018345" (the Folder-ID label scanned before the
+               sheet; blank if none had been scanned yet)
+
+These are the only fields the ingest account may write. Everything else on
+the record (locality, collector, determination, ...) is transcribed by
+staff later, from the image.
 
 A record that already exists for that AccessionNo (a rescan, or a sheet
 registered by hand before scanning) counts as done, not as an error — there
@@ -102,16 +108,22 @@ class FileMakerClient:
             return []
         return [rec["recordId"] for rec in _check(r)["response"]["data"]]
 
-    def create_skeleton(self, accession_id: str) -> str:
-        """Create the AccessionNo + Löpnr record, unless one already exists.
-        Returns CREATED or EXISTS."""
+    def create_skeleton(self, accession_id: str, folder_id: str) -> str:
+        """Create the skeleton record, unless one already exists for this
+        AccessionNo (then nothing is written). Returns CREATED or EXISTS.
+        folder_id may be "" for a sheet with no known folder."""
         if self.find_record_ids(accession_id):
             return EXISTS
         # A plain number, no leading zeros: GB-0577660 -> 577660. FileMaker
         # would otherwise store the zero-padded text as typed.
         lopnr = str(int(accession_id.removeprefix("GB-")))
         r = self._request("POST", "records",
-                          json={"fieldData": {"AccessionNo": accession_id, "Löpnr": lopnr}})
+                          json={"fieldData": {
+                              "AccessionNo": accession_id,
+                              "Löpnr": lopnr,
+                              "Image1": accession_id,
+                              "FolderQR": folder_id,
+                          }})
         _check(r)
         return CREATED
 

@@ -43,7 +43,7 @@ from steps.convert import tiff_to_jp2
 from steps.filemaker import FileMakerClient, FileMakerError, CREATED
 from steps.qr_read import decode_codes, classify_code, FOLDER, SHEET
 from steps.register import register_sheet, register_folder_marker
-from steps.state import FolderState
+from steps.state import FolderState, UNASSIGNED
 from steps.validate import validate_jp2
 
 load_dotenv()
@@ -250,7 +250,7 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
 
 def process_file(tiff_path: Path, dirs: dict[str, Path], state: FolderState,
                  log_path: Path, csv_path: Path, config: dict,
-                 filed_sheets: list[str]) -> bool:
+                 filed_sheets: list[tuple[str, str]]) -> bool:
     print(f"Processing: {tiff_path.name}")
     # Capture time = when BookEye actually wrote this file, not when ingest
     # happens to process it later — see capture_time_of(). Read this before
@@ -277,11 +277,11 @@ def process_file(tiff_path: Path, dirs: dict[str, Path], state: FolderState,
         ok = process_sheet(tiff_path, code, dirs, state, log_path, csv_path,
                            capture_time, config, barcodes)
         if ok:
-            filed_sheets.append(code)
+            filed_sheets.append((code, state.current_folder_id))
         return ok
 
 
-def create_filemaker_records(fm: FileMakerClient, accession_ids: list[str],
+def create_filemaker_records(fm: FileMakerClient, sheets: list[tuple[str, str]],
                              warn_log: Path) -> None:
     """Best-effort: create each filed sheet's skeleton record in FileMaker
     (see steps/filemaker.py), in ascending Löpnr order rather than scan
@@ -293,11 +293,15 @@ def create_filemaker_records(fm: FileMakerClient, accession_ids: list[str],
     Never fails the run — the images are already safely in place, and a
     missing record can be created later, so a FileMaker/network error is
     logged to warn_log instead."""
-    ordered = sorted(accession_ids, key=lambda a: int(a.removeprefix("GB-")))
+    ordered = sorted(sheets, key=lambda s: int(s[0].removeprefix("GB-")))
     print(f"\nCreating FileMaker records ({fm.database}) for {len(ordered)} sheet(s)...")
-    for accession_id in ordered:
+    for accession_id, folder_id in ordered:
+        # Blank rather than the UNASSIGNED placeholder, so it's never
+        # mistaken for a real Folder-ID in FileMaker.
+        if folder_id == UNASSIGNED:
+            folder_id = ""
         try:
-            result = fm.create_skeleton(accession_id)
+            result = fm.create_skeleton(accession_id, folder_id)
             print(f"  {accession_id}: {'created' if result == CREATED else 'already exists'}")
         except Exception as e:
             msg = f"FileMaker record not created for {accession_id} ({fm.database}): {e}"
