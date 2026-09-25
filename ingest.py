@@ -184,7 +184,7 @@ def process_folder_marker(tiff_path: Path, folder_id: str, dirs: dict[str, Path]
         log_error(error_log, tiff_path.name, str(e))
         for leftover in (tiff_path, named_tiff, jp2_path):
             if leftover.exists():
-                shutil.move(str(leftover), dirs["error"] / leftover.name)
+                move_to_error(leftover, dirs, error_log)
         return False
 
 
@@ -250,7 +250,7 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
         log_error(error_log, tiff_path.name, str(e))
         for leftover in (jp2_path, lossless_path, tiff_path, tiff_path.with_name(f"{accession_id}.tiff")):
             if leftover.exists():
-                shutil.move(str(leftover), dirs["error"] / leftover.name)
+                move_to_error(leftover, dirs, error_log)
         return False
 
 
@@ -258,8 +258,30 @@ def log_error(error_log: Path, filename: str, msg: str) -> None:
     """Print a file's failure reason and keep it in error_log — the file
     itself just lands in error/, which doesn't say why."""
     print(f"  ERROR: {msg}", file=sys.stderr)
-    with open(error_log, "a", encoding="utf-8") as f:
-        f.write(f"{datetime.now().isoformat(timespec='seconds')}\t{filename}\t{msg}\n")
+    try:
+        with open(error_log, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')}\t{filename}\t{msg}\n")
+    except OSError as e:  # e.g. the log's disk is full; the message is printed above
+        print(f"  (could not write {error_log.name}: {e})", file=sys.stderr)
+
+
+def move_to_error(path: Path, dirs: dict[str, Path], error_log: Path) -> None:
+    """Move a failed file into error/, never overwriting an earlier one
+    with the same name (BookEye's per-job counter repeats filenames). If
+    the move itself fails — e.g. a full disk when error/ is on another
+    filesystem than the inbox, so the move is really a copy — the file
+    stays where it is, any partial copy is removed, and the run goes on."""
+    dest = dirs["error"] / path.name
+    n = 1
+    while dest.exists():
+        dest = dirs["error"] / f"{path.stem}_{n}{path.suffix}"
+        n += 1
+    try:
+        shutil.move(str(path), dest)
+    except OSError as e:
+        if path.exists() and dest.exists():
+            dest.unlink()
+        log_error(error_log, path.name, f"could not move to error/ ({e}); left at {path}")
 
 
 def publish_conflict(image_id: str, kind: str, dirs: dict[str, Path],
@@ -304,7 +326,7 @@ def process_file(tiff_path: Path, dirs: dict[str, Path], state: FolderState,
         kind = classify_code(code)
     except ValueError as e:
         log_error(error_log, tiff_path.name, str(e))
-        shutil.move(str(tiff_path), dirs["error"] / tiff_path.name)
+        move_to_error(tiff_path, dirs, error_log)
         return False
 
     conflict = publish_conflict(code, kind, dirs, capture_time)
@@ -315,7 +337,7 @@ def process_file(tiff_path: Path, dirs: dict[str, Path], state: FolderState,
             state.set_current_folder(code)
             conflict += f"; {code} set as current folder anyway"
         log_error(error_log, tiff_path.name, conflict)
-        shutil.move(str(tiff_path), dirs["error"] / tiff_path.name)
+        move_to_error(tiff_path, dirs, error_log)
         return False
 
     if barcodes:
