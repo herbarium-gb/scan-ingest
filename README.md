@@ -51,6 +51,24 @@ BookEye's filename). Rationale for each step is in the module docstrings.
 
 The last two are skipped if not configured, and never fail the run.
 
+## Running nightly
+
+`ingest.py` exits with code 0 when all went well and 1 when anything
+needs a look: files moved to `error/`, FileMaker records or shard updates
+that failed, or a crash. In the second case it also sends an alert email
+(if `SMTP_HOST` and `NOTIFY_EMAIL` are set in `.env`) — without details,
+which stay in the logs on the server.
+
+Crontab line (`crontab -e`), adjusting the paths:
+
+```
+0 2 * * * flock -n /tmp/scan-ingest.lock nice -n 10 ionice -c 2 -n 7 ~/miniforge3/envs/scan-ingest/bin/python ~/scan-ingest/ingest.py >> /path/to/scan-ingest-state/logs/cron.log 2>&1
+```
+
+`flock -n` skips the night's run if the previous one is still going;
+`nice`/`ionice` keep it from competing with the image server. Call the
+environment's own `python` (cron doesn't activate conda).
+
 ## Requirements
 
 Everything, including `zbar` and `openjpeg`, is in `environment.yml`
@@ -59,8 +77,8 @@ Everything, including `zbar` and `openjpeg`, is in `environment.yml`
 ## Configuration
 
 - **`config.yml`** — JP2 encoding and validation settings, and `tiff.keep`.
-- **`.env`** (git-ignored) — paths, herbarium-platform and FileMaker; copy
-  `.env.template`, where each setting is explained.
+- **`.env`** (git-ignored) — paths, herbarium-platform, FileMaker and the
+  notification email; copy `.env.template`, where each setting is explained.
 
 ## Scripts
 
@@ -80,6 +98,7 @@ Delivery/<YYYY/MM/DD>/   lossy JP2s, served by IIIF   (default: done/jp2/)
 archive/<YYYY/MM/DD>/    lossless JP2s, sheets only   (default: done/jp2_lossless/)
 error/                   files that failed a step
 logs/
+  cron.log                       console output of the nightly runs (from the crontab line)
   errors_<date>.log              why each file is in error/
   ingest_<date>.tsv              per-run log
   filemaker_import_<date>.csv    Picturae-format rows

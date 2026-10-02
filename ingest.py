@@ -39,6 +39,7 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+from steps import notify
 from steps.convert import tiff_to_jp2
 from steps.filemaker import FileMakerClient, FileMakerError, CREATED
 from steps.iiif_index import idx_dir, published_dir
@@ -49,6 +50,10 @@ from steps.state import FolderState, UNASSIGNED
 from steps.validate import validate_jp2
 
 load_dotenv(REPO_ROOT / ".env")
+
+# Everything that went wrong this run, one line each — what decides the
+# exit code and the notification email at the end (see report_problems()).
+problems: list[str] = []
 
 
 def load_config(config_path: Path = REPO_ROOT / "config.yml") -> dict:
@@ -258,6 +263,7 @@ def log_error(error_log: Path, filename: str, msg: str) -> None:
     """Print a file's failure reason and keep it in error_log — the file
     itself just lands in error/, which doesn't say why."""
     print(f"  ERROR: {msg}", file=sys.stderr)
+    problems.append(f"{filename}: {msg}")
     try:
         with open(error_log, "a", encoding="utf-8") as f:
             f.write(f"{datetime.now().isoformat(timespec='seconds')}\t{filename}\t{msg}\n")
@@ -381,11 +387,33 @@ def create_filemaker_records(fm: FileMakerClient, sheets: list[tuple[str, str]],
         except Exception as e:
             msg = f"FileMaker record not created for {accession_id} ({fm.database}): {e}"
             print(f"  WARNING: {msg}", file=sys.stderr)
+            problems.append(msg)
             with open(warn_log, "a", encoding="utf-8") as f:
                 f.write(f"{datetime.now().isoformat(timespec='seconds')}\t{msg}\n")
 
 
-def main() -> None:
+def report_problems(summary: str, error_dir: Path | None, log_dir: Path | None) -> int:
+    """Exit code for the run: 0 if nothing went wrong, else 1 after
+    printing the problems (into the cron log) and sending an alert email
+    without details (steps/notify.py) — so an unattended run is silent
+    unless a person needs to look at something."""
+    if not problems:
+        return 0
+    lines = [summary, "", f"{len(problems)} problem(s):"]
+    lines += [f"  - {p}" for p in problems]
+    if error_dir is not None and error_dir.is_dir():
+        waiting = sum(1 for f in error_dir.iterdir() if f.is_file())
+        lines += ["", f"{waiting} file(s) waiting in {error_dir}"]
+    if log_dir is not None:
+        lines += [f"Logs: {log_dir}"]
+    body = "\n".join(lines)
+    print(f"\n{body}", file=sys.stderr)
+    notify.alert(f"The latest run had {len(problems)} problem(s).")
+    return 1
+
+
+def main() -> int:
+    print(f"=== scan-ingest run {datetime.now().isoformat(timespec='seconds')} ===")
     config = load_config()
     dirs = setup_dirs(config)
     date_str = datetime.now().strftime("%Y%m%d")
@@ -402,14 +430,16 @@ def main() -> None:
 
     if not tiffs:
         print("No TIFF files found in inbox.")
-        return
+        return 0
 
     # Checked before touching any file: a half-filled FM_* config is a
     # setup mistake to fix first, not something to warn about per sheet.
     try:
         fm = FileMakerClient.from_env()
     except FileMakerError as e:
-        sys.exit(f"FileMaker config error: {e}")
+        problems.append(f"FileMaker config error, nothing processed: {e}")
+        return report_problems("Run stopped before processing any file.",
+                               None, dirs["logs"])
     if fm is None:
         print("FM_BASE_URL not set — skipping FileMaker records.")
     fm_warn_log = dirs["logs"] / f"filemaker_warnings_{date_str}.log"
@@ -447,6 +477,9 @@ def main() -> None:
 
     if processed_dates:
         trigger_shard_build(processed_dates, dirs["done_jp2"], dirs["logs"], date_str)
+
+    return report_problems(f"{ok} file(s) succeeded, {fail} failed.",
+                           dirs["error"], dirs["logs"])
 
 
 def trigger_shard_build(dates: set, image_root: Path, log_dir: Path,
@@ -490,9 +523,19 @@ def trigger_shard_build(dates: set, image_root: Path, log_dir: Path,
         else:
             msg = f"Shard build failed for {subpath} ({target}): {error}"
             print(f"  WARNING: {msg}", file=sys.stderr)
+            problems.append(msg)
             with open(warn_log, "a", encoding="utf-8") as f:
                 f.write(f"{datetime.now().isoformat(timespec='seconds')}\t{msg}\n")
 
 
 if __name__ == "__main__":
-    main()
+    # Line-buffered so that, redirected to a log file (cron), progress and
+    # error messages stay in the order they happened.
+    sys.stdout.reconfigure(line_buffering=True)
+    try:
+        sys.exit(main())
+    except Exception:
+        # A crash is the one failure nothing else reports. The traceback
+        # itself only goes to the cron log (re-raised below).
+        notify.alert("The latest run crashed.")
+        raise
