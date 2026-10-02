@@ -93,8 +93,8 @@ Everything, including `zbar` and `openjpeg`, is in `environment.yml`
 - `scripts/make_alert_test_tiff.py [--clean]` — puts a TIFF without a QR
   code in the inbox, so the next run sends the alert email; `--clean`
   removes it from `error/` afterwards.
-- `scripts/compression_quality_test.py TIFF…` — size/PSNR at several JP2
-  rates, for choosing the encoding rate.
+- `scripts/compression_quality_test.py TIFF…` — compares file size and
+  image quality at several JP2 compression levels, to choose one.
 
 ## Outputs
 
