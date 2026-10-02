@@ -1,10 +1,9 @@
 # scan-ingest
 
-Ingest pipeline for herbarium sheets scanned in-house on a BookEye 4 at the
-Gothenburg herbarium (GB). Each scan is identified by its QR code,
-converted to JP2, made viewable in the IIIF viewer, and given an empty
-record in FileMaker, ready for staff to register (transcribe) the label
-from the image.
+Ingest pipeline for herbarium sheets scanned in-house on a BookEye 4 at
+Herbarium GB. Each scan is identified by its QR code, converted to JP2,
+made viewable in the IIIF viewer, and given an empty record in FileMaker,
+ready for staff to register (transcribe) the label from the image.
 
 ```
 BookEye  ──►  scan-ingest  ──►  JP2 archive  ──►  IIIF viewer
@@ -53,14 +52,8 @@ The last two are skipped if not configured, and never stop the run.
 
 ## Running nightly
 
-Silent when all went well. If anything needs a look — files moved to
-`error/`, a failed FileMaker record or shard update, a crash — it exits
-with code 1 and sends an alert email (configured in `.env`). The email
-only says that something went wrong; the details are in `logs/cron.log`
-and, per file, `errors_<date>.log` (see [Outputs](#outputs)). Decide for
-each file in `error/`: rescan it, delete it, or move it back to the inbox.
-
-Crontab line (`crontab -e`), adjusting the paths:
+On the server, cron runs `ingest.py` every night at 02:00. Crontab line
+(`crontab -e`), adjusting the paths:
 
 ```
 0 2 * * * flock -n /tmp/scan-ingest.lock nice -n 10 ionice -c 2 -n 7 ~/miniforge3/envs/scan-ingest/bin/python ~/scan-ingest/ingest.py >> /path/to/scan-ingest-state/logs/cron.log 2>&1
@@ -69,6 +62,13 @@ Crontab line (`crontab -e`), adjusting the paths:
 `flock -n` skips the night's run if the previous one is still going;
 `nice`/`ionice` keep it from competing with the image server. Call the
 environment's own `python` (cron doesn't activate conda).
+
+`ingest.py` sends an alert email (configured in `.env`) and exits with
+code 1 only when something needs a look: files moved to `error/`, a
+failed FileMaker record or shard update, or a crash. The email only says
+that something went wrong; the details are in `logs/cron.log` and, per
+file, `errors_<date>.log` (see [Outputs](#outputs)). Decide for each file
+in `error/`: rescan it, delete it, or move it back to the inbox.
 
 ## Requirements
 
