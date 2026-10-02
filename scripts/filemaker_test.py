@@ -1,39 +1,29 @@
 #!/usr/bin/env python3
-"""One-off test: verify the ingest account can create/read/delete a
-record in the FileMaker test database via the Data API.
+"""Check that the ingest account can create, read and delete a FileMaker record.
 
 Creates one record with a clearly-marked test value in AccessionNo, reads it
 back to confirm the round-trip, then deletes it and logs out — leaves nothing
-behind if it succeeds. Meant as the seed of the real Postgres -> FileMaker
-sync (see notes/scan-ingest-pipeline.txt), not a throwaway.
+behind if it succeeds.
 
-Reads all connection details from environment variables — never hardcode
-credentials here, never put real values in this file or commit a filled-in
-.env:
+Only for the test database: the ingest account has no Delete permission in
+production, so the test record would be left behind there.
 
-  FM_BASE_URL   e.g. https://filemaker.example.org  (no trailing slash)
-  FM_DATABASE   the test database (name ending in _test)
-  FM_LAYOUT     layout the account can write through
-  FM_USER       the ingest account
-  FM_PASSWORD
+Uses the same FM_* variables as ingest.py (see .env.template).
 
-Run:
-  FM_BASE_URL=https://... FM_DATABASE=... \
-  FM_LAYOUT=... FM_USER=... FM_PASSWORD=... \
+Run (from the repo root):
   python scripts/filemaker_test.py
-
-Needs `requests` (not yet in environment.yml — `pip install requests` first,
-or add it there if this becomes permanent).
 """
 
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
+REPO_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(REPO_ROOT / ".env")
 
 
 def env(name: str) -> str:
@@ -44,10 +34,10 @@ def env(name: str) -> str:
 
 
 def fm_check(r: requests.Response) -> dict:
-    """Raise with FileMaker's own error code/text, not just the bare HTTP status.
+    """Raise with FileMaker's own error code/message, not just the bare HTTP status.
 
     The Data API always wraps its real error in the JSON body's "messages"
-    array (e.g. {"messages": [{"code": "500", "text": "Date value does not
+    array (e.g. {"messages": [{"code": "500", "message": "Date value does not
     meet validation..."}], "response": {}}) even when the HTTP status is a
     generic "500 FileMaker Data API Engine Error" — that HTTP-level message
     alone never tells you why.
@@ -61,9 +51,9 @@ def fm_check(r: requests.Response) -> dict:
             detail = "; ".join(f"code {m.get('code')}: {m.get('message')}" for m in body["messages"])
             print(f"  FileMaker error — {detail}", file=sys.stderr)
         if body is not None:
-            # Full body, in case there's more than code/text (e.g. which
+            # Full body, in case there's more than code/message (e.g. which
             # field actually tripped a validation on a create with only one
-            # field set — code/text alone hasn't been enough to tell so far).
+            # field set — code/message alone may not tell).
             print(f"  Full response body: {body}", file=sys.stderr)
         else:
             print(f"  No JSON error body; raw response: {r.text[:500]!r}", file=sys.stderr)

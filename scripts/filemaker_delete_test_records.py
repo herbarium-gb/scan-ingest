@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Delete records from the FileMaker TEST database by AccessionNo, so
-ingest.py's FileMaker step can be re-tested from a known state (record
+"""Delete records from the FileMaker test database by AccessionNo.
+
+Lets ingest.py's FileMaker step be re-tested from a known state (record
 missing -> created, record present -> left alone).
 
 Refuses to run unless FM_DATABASE ends in "_test" — this is never meant
@@ -10,8 +11,8 @@ confirmation before deleting anything.
 
 Uses the same FM_* variables as ingest.py (see .env.template).
 
-Run:  python scripts/filemaker_delete_test_records.py GB-0577660 GB-0577661 ...
-(from the repo root)
+Run (from the repo root):
+  python scripts/filemaker_delete_test_records.py GB-0577660 GB-0577661 ...
 """
 
 import sys
@@ -19,10 +20,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 from steps.filemaker import FileMakerClient  # noqa: E402
 
-load_dotenv()
+load_dotenv(REPO_ROOT / ".env")
 
 
 def main() -> None:

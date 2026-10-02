@@ -9,8 +9,8 @@ find a rate that gives Picturae-like quality/size for BookEye material.
 Picturae reference (GB-0500017): ~12:1, ~17 MB, and our own re-encoding of
 it lands around ~49 dB. 40+ dB = visually indistinguishable.
 
-Run:  python scripts/compression_quality_test.py <image1.tif> <image2.tif> ...
-(works from any directory — paths are relative to the repo root)
+Run (from the repo root):
+  python scripts/compression_quality_test.py <image1.tif> <image2.tif> ...
 """
 
 import math
@@ -24,8 +24,7 @@ from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
-
-from steps.convert import tiff_to_jp2
+from steps.convert import tiff_to_jp2  # noqa: E402
 
 # Compression levels to test, as bits per pixel. For 24-bit RGB, ratio ≈
 # 24 / bpp:  3.0→8:1  2.4→10:1  2.0→12:1 (Picturae)  1.5→16:1  1.2→20:1

@@ -12,7 +12,8 @@ lies inside a directory containing a file named ".test-sandbox". Create
 that (empty) marker once in the root of a local sandbox; a production
 server never has one, so this script can't empty real data there.
 
-Run (from the repo root):  python scripts/reset_local_test_output.py
+Run (from the repo root):
+  python scripts/reset_local_test_output.py
 """
 
 import os

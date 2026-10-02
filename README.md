@@ -83,12 +83,16 @@ Everything, including `zbar` and `openjpeg`, is in `environment.yml`
 
 ## Scripts
 
-- `scripts/reset_local_test_output.py` — empties a local test sandbox
-  (marked by a `.test-sandbox` file) and refills its inbox from `TEST_TIFF_DIR`.
+- `scripts/reset_local_test_output.py` — empties a local test sandbox and
+  refills its inbox from `TEST_TIFF_DIR`. Requires an empty `.test-sandbox`
+  file in the sandbox's root folder; without it, nothing is deleted.
 - `scripts/filemaker_delete_test_records.py GB-… GB-…` — deletes records in
   the FileMaker test database (`*_test` only).
 - `scripts/filemaker_test.py` — create/read/delete round-trip against the
   FileMaker Data API.
+- `scripts/make_alert_test_tiff.py [--clean]` — puts a TIFF without a QR
+  code in the inbox, so the next run sends the alert email; `--clean`
+  removes it from `error/` afterwards.
 - `scripts/compression_quality_test.py TIFF…` — size/PSNR at several JP2
   rates, for choosing the encoding rate.
 
