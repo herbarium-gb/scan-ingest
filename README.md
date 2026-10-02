@@ -49,15 +49,16 @@ BookEye's filename). Rationale for each step is in the module docstrings.
 | Create FileMaker record | `steps/filemaker.py` | After the run: an empty record per sheet, in Löpnr order; existing records untouched. |
 | Update shards | `ingest.py` | After the run: updates herbarium-platform's shard index so new images show in the viewer. |
 
-The last two are skipped if not configured, and never fail the run.
+The last two are skipped if not configured, and never stop the run.
 
 ## Running nightly
 
-`ingest.py` exits with code 0 when all went well and 1 when anything
-needs a look: files moved to `error/`, FileMaker records or shard updates
-that failed, or a crash. In the second case it also sends an alert email
-(if `SMTP_HOST` and `NOTIFY_EMAIL` are set in `.env`) — without details,
-which stay in the logs on the server.
+Silent when all went well. If anything needs a look — files moved to
+`error/`, a failed FileMaker record or shard update, a crash — it exits
+with code 1 and sends an alert email (configured in `.env`). The email
+only says that something went wrong; the details are in `logs/cron.log`
+and, per file, `errors_<date>.log` (see [Outputs](#outputs)). Decide for
+each file in `error/`: rescan it, delete it, or move it back to the inbox.
 
 Crontab line (`crontab -e`), adjusting the paths:
 
@@ -98,7 +99,7 @@ Delivery/<YYYY/MM/DD>/   lossy JP2s, served by IIIF   (default: done/jp2/)
 archive/<YYYY/MM/DD>/    lossless JP2s, sheets only   (default: done/jp2_lossless/)
 error/                   files that failed a step
 logs/
-  cron.log                       console output of the nightly runs (from the crontab line)
+  cron.log                       console output of the nightly runs
   errors_<date>.log              why each file is in error/
   ingest_<date>.tsv              per-run log
   filemaker_import_<date>.csv    Picturae-format rows
