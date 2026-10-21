@@ -53,6 +53,9 @@ def tiff_to_jp2(tiff_path: Path, jp2_path: Path, config: dict, lossless: bool = 
         cmd += ["-c", precinct_str]
     if tile_size:
         cmd += ["-t", f"{tile_size[0]},{tile_size[1]}"]
+    threads = jp2_cfg.get("threads")
+    if threads:
+        cmd += ["-threads", str(threads)]
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:

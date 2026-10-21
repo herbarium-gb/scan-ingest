@@ -17,6 +17,9 @@ jp2:
   progression: RPCL       # Progression order — Kakadu Corder=RPCL
   block_size: [64, 64]    # Code-block size — Kakadu Cblk={64,64}
   tile_size: [1024, 1024] # Internal tiles for faster IIIF region extraction
+  threads: ALL_CPUS       # opj_compress -threads: a number, or ALL_CPUS for every core.
+                          # Output is bit-identical to a single-threaded encode; ~3x
+                          # faster on a 6-core server. Remove to use one thread.
   precinct_sizes:         # One entry per resolution level (smallest first)
     - [32, 32]
     - [64, 64]
