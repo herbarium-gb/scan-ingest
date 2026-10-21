@@ -20,6 +20,8 @@ jp2:
   threads: ALL_CPUS       # opj_compress -threads: a number, or ALL_CPUS for every core.
                           # Output is bit-identical to a single-threaded encode; ~3x
                           # faster on a 6-core server. Remove to use one thread.
+  parallel: true          # Encode a sheet's lossy and lossless JP2s at the same time
+                          # instead of one after the other. Same output either way.
   precinct_sizes:         # One entry per resolution level (smallest first)
     - [32, 32]
     - [64, 64]

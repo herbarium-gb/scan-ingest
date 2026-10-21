@@ -33,6 +33,7 @@ import re
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -205,14 +206,28 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
     jp2_path = tiff_path.with_suffix(".jp2")
     lossless_path = tiff_path.with_name(f"{tiff_path.stem}_lossless.jp2")
     try:
-        print("  Converting to JP2 (lossy)...")
-        tiff_to_jp2(tiff_path, jp2_path, config)
+        if config.get("jp2", {}).get("parallel"):
+            # Each encode has single-threaded stretches (reading the TIFF,
+            # writing the codestream); running both at once lets one use the
+            # cores the other leaves idle. Leaving the with-block waits for
+            # both, so a failure in one can't leave the other still writing
+            # while the files are cleaned up below.
+            print("  Converting to JP2 (lossy + lossless in parallel)...")
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                encodes = [pool.submit(tiff_to_jp2, tiff_path, jp2_path, config),
+                           pool.submit(tiff_to_jp2, tiff_path, lossless_path, config,
+                                       lossless=True)]
+            for f in encodes:
+                f.result()  # re-raises the encode's exception, if any
+        else:
+            print("  Converting to JP2 (lossy)...")
+            tiff_to_jp2(tiff_path, jp2_path, config)
+            print("  Converting to JP2 (lossless)...")
+            tiff_to_jp2(tiff_path, lossless_path, config, lossless=True)
+
         named_jp2 = jp2_path.with_name(f"{accession_id}.jp2")
         jp2_path.rename(named_jp2)
         jp2_path = named_jp2
-
-        print("  Converting to JP2 (lossless)...")
-        tiff_to_jp2(tiff_path, lossless_path, config, lossless=True)
         named_lossless = lossless_path.with_name(f"{accession_id}_lossless.jp2")
         lossless_path.rename(named_lossless)
         lossless_path = named_lossless
