@@ -226,7 +226,7 @@ def process_sheet(tiff_path: Path, accession_id: str, dirs: dict[str, Path],
         folder_id = state.current_folder_id
         final_jp2_path = dated_path(dirs["done_jp2"], capture_time, jp2_path.name)
         final_lossless_path = dated_path(dirs["done_jp2_lossless"], capture_time, f"{accession_id}.jp2")
-        print(f"  Registering (folder: {folder_id})...")
+        print(f"  Logging (folder: {folder_id})...")
         register_sheet(
             accession_id, folder_id, jp2_path, log_path, csv_path,
             capture_time, final_jp2_path.as_posix(), barcodes=barcodes,
